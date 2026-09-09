@@ -8,14 +8,19 @@ import {
   type DesignInstanceJson,
   type TilingProjectJson,
 } from '@/domain/project';
-import { DEFAULT_GEMINI_MODEL } from '@/llm/assist';
+import {
+  DEFAULT_LLM_PROVIDER_ID,
+  getProvider,
+  resolveModelForProvider,
+} from '@/llm/providers';
 
 const STORAGE_KEY = 'vibed-tiling-project';
 const SETTINGS_KEY = 'vibed-llm-settings';
 
 export type LlmSettings = {
-  apiKey: string;
+  provider: string;
   model: string;
+  apiKey: string;
 };
 
 type ProjectContextValue = {
@@ -43,40 +48,38 @@ function loadProject(): TilingProjectJson {
   return createDefaultProject();
 }
 
-function defaultModel(): string {
-  const fromEnv = import.meta.env.VITE_GEMINI_MODEL?.trim();
-  if (!fromEnv || fromEnv === 'gemini-flash-latest' || fromEnv === 'gemini-flash') {
-    return DEFAULT_GEMINI_MODEL;
-  }
-  return fromEnv;
-}
-
-function resolveStoredModel(model: string | undefined): string {
-  const trimmed = model?.trim();
-  if (!trimmed || trimmed === 'gemini-flash-latest' || trimmed === 'gemini-flash') {
-    return defaultModel();
-  }
-  return trimmed;
+function defaultLlmSettings(): LlmSettings {
+  const envProvider = import.meta.env.VITE_LLM_PROVIDER?.trim();
+  const provider = getProvider(envProvider || DEFAULT_LLM_PROVIDER_ID);
+  const envModel = import.meta.env.VITE_LLM_MODEL?.trim() || import.meta.env.VITE_GEMINI_MODEL?.trim();
+  return {
+    provider: provider.id,
+    model: resolveModelForProvider(provider, envModel),
+    apiKey: '',
+  };
 }
 
 function loadLlmSettings(): LlmSettings {
+  const defaults = defaultLlmSettings();
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<LlmSettings> & { endpoint?: string };
-      // Legacy `endpoint` (proxy URL) is ignored; Gemini is called directly.
+      // Legacy: no provider → treat as gemini if a key/model was saved for Gemini-only settings.
+      const providerId =
+        parsed.provider?.trim() ||
+        (parsed.apiKey || parsed.model ? 'gemini' : defaults.provider);
+      const provider = getProvider(providerId);
       return {
+        provider: provider.id,
+        model: resolveModelForProvider(provider, parsed.model),
         apiKey: parsed.apiKey ?? '',
-        model: resolveStoredModel(parsed.model),
       };
     }
   } catch {
     /* ignore */
   }
-  return {
-    apiKey: '',
-    model: defaultModel(),
-  };
+  return defaults;
 }
 
 function persist(project: TilingProjectJson) {

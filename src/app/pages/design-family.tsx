@@ -7,6 +7,7 @@ import {
   translationMat3,
 } from '@/domain/project';
 import { assistDesignFamily } from '@/llm/assist';
+import { getProvider, providerRequiresApiKey } from '@/llm/providers';
 import { ModulePreviewSvg } from '@/render/svg/module-preview';
 import { useProject } from '../project-context';
 
@@ -33,7 +34,10 @@ export function DesignFamilyPage() {
     });
   };
 
-  const assistEnabled = Boolean(llmSettings.apiKey.trim());
+  const provider = getProvider(llmSettings.provider);
+  const assistEnabled =
+    Boolean(llmSettings.provider) &&
+    (!providerRequiresApiKey(provider) || Boolean(llmSettings.apiKey.trim()));
 
   return (
     <div className="page">
@@ -399,7 +403,8 @@ export function DesignFamilyPage() {
             <h2>Assist with LLM</h2>
             {!assistEnabled && (
               <p className="muted">
-                Configure a Gemini API key in Settings to enable assist. Keys stay in localStorage.
+                Configure LLM provider{providerRequiresApiKey(provider) ? ' and API key' : ''} in
+                Settings to enable assist.
               </p>
             )}
             <div className="field">
@@ -417,8 +422,9 @@ export function DesignFamilyPage() {
                   setProposal(null);
                   try {
                     const result = await assistDesignFamily({
-                      apiKey: llmSettings.apiKey,
+                      provider: llmSettings.provider,
                       model: llmSettings.model,
+                      apiKey: llmSettings.apiKey,
                       request: {
                         prompt,
                         tileDefinitions: project.tileDefinitions,

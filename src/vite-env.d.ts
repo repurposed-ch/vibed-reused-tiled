@@ -1,6 +1,9 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_LLM_PROVIDER?: string;
+  readonly VITE_LLM_MODEL?: string;
+  /** @deprecated Prefer VITE_LLM_MODEL; still used when provider is gemini. */
   readonly VITE_GEMINI_MODEL?: string;
 }
 

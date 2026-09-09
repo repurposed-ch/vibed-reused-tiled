@@ -4,9 +4,12 @@ import {
   type StockStateJson,
   type TileDefinitionJson,
 } from '@/domain/project';
-
-/** Prefer a concrete model id; aliases like `gemini-flash-latest` often hit capacity 503s. */
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.7-flash';
+import {
+  getProvider,
+  providerRequiresApiKey,
+  resolveModelForProvider,
+  type LlmProvider,
+} from '@/llm/providers';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const RETRYABLE_STATUS = new Set([429, 503]);
@@ -99,7 +102,17 @@ function buildUserPrompt(request: LlmAssistRequest): string {
   return parts.join('\n');
 }
 
-function extractCandidateText(json: unknown): string {
+function parseFamilyJson(text: string): DesignFamilyJson {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCodeFences(text)) as unknown;
+  } catch {
+    throw new Error('LLM assist failed: model reply was not valid JSON');
+  }
+  return DesignFamilyJsonSchema.parse(unwrapFamily(parsed));
+}
+
+function extractGeminiText(json: unknown): string {
   if (typeof json !== 'object' || json === null) {
     throw new Error('LLM assist failed: unexpected response shape');
   }
@@ -126,61 +139,70 @@ function extractCandidateText(json: unknown): string {
   return text;
 }
 
+function extractOpenAiText(json: unknown): string {
+  if (typeof json !== 'object' || json === null) {
+    throw new Error('LLM assist failed: unexpected response shape');
+  }
+  const root = json as Record<string, unknown>;
+  const choices = root.choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    throw new Error(`LLM assist failed: no choices (${JSON.stringify(root.error ?? root)})`);
+  }
+  const first = choices[0] as Record<string, unknown>;
+  const message = first.message as Record<string, unknown> | undefined;
+  const content = message?.content;
+  if (typeof content === 'string' && content.trim()) return content;
+  if (Array.isArray(content)) {
+    const text = content
+      .map((part) =>
+        typeof part === 'object' && part && 'text' in part
+          ? String((part as { text: unknown }).text)
+          : typeof part === 'string'
+            ? part
+            : '',
+      )
+      .join('');
+    if (text.trim()) return text;
+  }
+  throw new Error('LLM assist failed: empty completion content');
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function normalizeModelId(model: string | undefined): string {
-  const raw = (model?.trim() || DEFAULT_GEMINI_MODEL).replace(/^models\//, '');
-  // Alias often shares a hot pool; steer new/legacy settings to a concrete id.
-  if (raw === 'gemini-flash-latest' || raw === 'gemini-flash') return DEFAULT_GEMINI_MODEL;
-  return raw;
+function statusHint(status: number): string {
+  if (status === 503) {
+    return ' Model is overloaded — try again shortly, or pick another provider/model in Settings.';
+  }
+  if (status === 429) return ' Rate limited — wait a moment and retry.';
+  if (status === 0) {
+    return ' Network/CORS error — this provider may block browser calls; try another free provider or a proxy.';
+  }
+  return '';
 }
 
-export async function assistDesignFamily(args: {
-  apiKey: string;
-  model?: string;
-  request: LlmAssistRequest;
-}): Promise<DesignFamilyJson> {
-  const apiKey = args.apiKey.trim();
-  if (!apiKey) throw new Error('Gemini API key is not configured');
-
-  const model = normalizeModelId(args.model);
-  const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent`;
-  const body = JSON.stringify({
-    contents: [
-      {
-        parts: [{ text: buildUserPrompt(args.request) }],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: 'application/json',
-    },
-  });
-
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+): Promise<{ ok: true; json: unknown } | { ok: false; status: number; text: string }> {
   let lastErrorText = '';
   let lastStatus = 0;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': apiKey,
-      },
-      body,
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (err) {
+      lastStatus = 0;
+      lastErrorText = err instanceof Error ? err.message : String(err);
+      if (attempt === MAX_ATTEMPTS) break;
+      await sleep(500 * 2 ** (attempt - 1));
+      continue;
+    }
 
     if (res.ok) {
-      const payload: unknown = await res.json();
-      const text = extractCandidateText(payload);
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(stripCodeFences(text)) as unknown;
-      } catch {
-        throw new Error('LLM assist failed: model reply was not valid JSON');
-      }
-      return DesignFamilyJsonSchema.parse(unwrapFamily(parsed));
+      return { ok: true, json: await res.json() };
     }
 
     lastStatus = res.status;
@@ -189,11 +211,102 @@ export async function assistDesignFamily(args: {
     await sleep(500 * 2 ** (attempt - 1));
   }
 
-  const hint =
-    lastStatus === 503
-      ? ' Model is overloaded — try again shortly, or set another model in Settings (e.g. gemini-3.6-flash).'
-      : lastStatus === 429
-        ? ' Rate limited — wait a moment and retry.'
-        : '';
-  throw new Error(`LLM assist failed (${lastStatus}): ${lastErrorText}${hint}`);
+  return { ok: false, status: lastStatus, text: lastErrorText };
+}
+
+async function callGeminiGenerateContent(args: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+}): Promise<DesignFamilyJson> {
+  const model = args.model.replace(/^models\//, '');
+  const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent`;
+  const result = await fetchWithRetry(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-goog-api-key': args.apiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: args.prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
+  });
+
+  if (!result.ok) {
+    throw new Error(`LLM assist failed (${result.status}): ${result.text}${statusHint(result.status)}`);
+  }
+  return parseFamilyJson(extractGeminiText(result.json));
+}
+
+async function callOpenAiChatCompletions(args: {
+  provider: LlmProvider;
+  apiKey: string;
+  model: string;
+  prompt: string;
+}): Promise<DesignFamilyJson> {
+  const url = `${args.provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (args.provider.auth === 'bearer' && args.apiKey) {
+    headers.Authorization = `Bearer ${args.apiKey}`;
+  }
+
+  const messages = [
+    {
+      role: 'user',
+      content: args.prompt,
+    },
+  ];
+
+  const withFormat = {
+    model: args.model,
+    messages,
+    response_format: { type: 'json_object' as const },
+  };
+  const withoutFormat = { model: args.model, messages };
+
+  let result = await fetchWithRetry(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(withFormat),
+  });
+
+  // Some free gateways reject response_format — retry once without it.
+  if (!result.ok && result.status === 400) {
+    result = await fetchWithRetry(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(withoutFormat),
+    });
+  }
+
+  if (!result.ok) {
+    throw new Error(`LLM assist failed (${result.status}): ${result.text}${statusHint(result.status)}`);
+  }
+  return parseFamilyJson(extractOpenAiText(result.json));
+}
+
+export async function assistDesignFamily(args: {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  request: LlmAssistRequest;
+}): Promise<DesignFamilyJson> {
+  const provider = getProvider(args.provider);
+  const model = resolveModelForProvider(provider, args.model);
+  const apiKey = args.apiKey?.trim() ?? '';
+
+  if (providerRequiresApiKey(provider) && !apiKey) {
+    throw new Error(`${provider.label} API key is not configured`);
+  }
+
+  const prompt = buildUserPrompt(args.request);
+
+  if (provider.auth === 'gemini-header') {
+    return callGeminiGenerateContent({ apiKey, model, prompt });
+  }
+
+  return callOpenAiChatCompletions({ provider, apiKey, model, prompt });
 }

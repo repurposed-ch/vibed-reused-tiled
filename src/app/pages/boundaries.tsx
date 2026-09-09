@@ -77,9 +77,9 @@ export function BoundariesPage() {
           <div className="field">
             <label>BoundaryConditions</label>
             <textarea
+              className="field-textarea-tall"
               value={raw}
               onChange={(e) => setRaw(e.target.value)}
-              style={{ minHeight: '22rem' }}
             />
           </div>
           <div className="row" style={{ marginTop: '0.75rem' }}>

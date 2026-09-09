@@ -29,8 +29,10 @@ See [`architecture.md`](architecture.md) for schemas, workflow layers, design-fa
 
 ## LLM assist (optional)
 
-1. Open `#/settings` and set a Gemini API key (and model if needed). Keys stay in `localStorage`.
-2. Or set `VITE_GEMINI_MODEL` at build time for the default model (see [`.env.example`](.env.example)).
-3. On `#/design-family`, use **Assist with LLM**. Responses must validate as `DesignFamily` JSON before apply.
+1. Open `#/settings` and pick a **provider** + **model**. Default is OVHcloud (no API key).
+2. Enter an API key only when the provider requires one. Keys stay in `localStorage`.
+3. Free-tier catalog inspired by [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis) (linked from Settings).
+4. Optional build defaults: `VITE_LLM_PROVIDER` / `VITE_LLM_MODEL` (see [`.env.example`](.env.example)).
+5. On `#/design-family`, use **Assist with LLM**. Responses must validate as `DesignFamily` JSON before apply.
 
-The browser calls Google `generateContent` with `X-goog-api-key`. Create a key in [Google AI Studio](https://aistudio.google.com/apikey) and rotate any key that was shared. For production, prefer a small proxy that holds the provider secret (CORS / key restrictions can block browser calls).
+Gemini uses `generateContent` + `X-goog-api-key`; other providers use OpenAI-compatible `chat/completions`. Browser CORS may block some endpoints — switch provider if needed. For production, prefer a small proxy that holds secrets.

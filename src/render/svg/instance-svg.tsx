@@ -8,11 +8,11 @@ export function InstanceSvg({
   instance,
   tiles,
   boundaries,
-  scale = 70,
 }: {
   instance: DesignInstanceJson;
   tiles: TileDefinitionJson[];
   boundaries: BoundaryConditionsJson;
+  /** @deprecated ignored — SVG is fluid to container width */
   scale?: number;
 }) {
   const tileMap = new Map(tiles.map((t) => [t.id, t]));
@@ -25,15 +25,18 @@ export function InstanceSvg({
     maxY = Math.max(maxY, (pl.mat3.elements[7] ?? 0) + t.width);
   }
 
-  const width = (maxX + 0.4) * scale;
-  const height = (maxY + 0.4) * scale;
+  const vbW = maxX + 0.4;
+  const vbH = maxY + 0.4;
 
   return (
     <svg
-      width={width}
-      height={height}
-      viewBox={`-0.2 -0.2 ${maxX + 0.4} ${maxY + 0.4}`}
+      className="fluid-svg"
+      viewBox={`-0.2 -0.2 ${vbW} ${vbH}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ aspectRatio: `${vbW} / ${vbH}` }}
       xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Design instance"
     >
       <BoundaryPaths boundaries={boundaries} />
       {instance.placements.map((pl) => {

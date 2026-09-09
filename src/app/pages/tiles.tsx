@@ -3,49 +3,74 @@ import { useProject } from '../project-context';
 
 const SIDES: FacadeSide[] = ['south', 'east', 'north', 'west'];
 
+const MAX_PREVIEW_W = 160;
+const MAX_PREVIEW_H = 100;
+
+function formatMeters(n: number): string {
+  return Number.isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : '—';
+}
+
 function RhythmViz({ tile }: { tile: TileDefinitionJson }) {
-  const w = 160;
-  const h = 100;
+  const length = Math.max(tile.length, 1e-6);
+  const width = Math.max(tile.width, 1e-6);
+  const scale = Math.min(MAX_PREVIEW_W / length, MAX_PREVIEW_H / width);
+  const w = length * scale;
+  const h = width * scale;
   const pad = 28;
+  const vbW = w + pad * 2;
+  const vbH = h + pad * 2;
+  const dims = `${formatMeters(tile.length)}×${formatMeters(tile.width)}×${formatMeters(tile.thickness)} m`;
   return (
-    <svg width={w + pad * 2} height={h + pad * 2} viewBox={`0 0 ${w + pad * 2} ${h + pad * 2}`}>
-      <rect
-        x={pad}
-        y={pad}
-        width={w}
-        height={h}
-        fill={tile.color}
-        stroke="#f3ebe1"
-        strokeWidth={1.5}
-      />
-      {SIDES.map((side) => {
-        const r = tile.rhythm?.[side];
-        if (!r) return null;
-        const label = `${r.name}${r.mirrored ? '′' : ''}`;
-        const pos =
-          side === 'south'
-            ? { x: pad + w / 2, y: pad + h + 14 }
-            : side === 'north'
-              ? { x: pad + w / 2, y: pad - 10 }
-              : side === 'east'
-                ? { x: pad + w + 14, y: pad + h / 2 }
-                : { x: pad - 14, y: pad + h / 2 };
-        return (
-          <text
-            key={side}
-            x={pos.x}
-            y={pos.y}
-            fill="#b5a89a"
-            fontSize={11}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontFamily="Fragment Mono, monospace"
-          >
-            {label}
-          </text>
-        );
-      })}
-    </svg>
+    <div style={{ display: 'grid', placeItems: 'center', gap: '0.35rem' }}>
+      <svg
+        className="fluid-svg"
+        viewBox={`0 0 ${vbW} ${vbH}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ aspectRatio: `${vbW} / ${vbH}`, maxWidth: 280 }}
+        role="img"
+        aria-label={`Rhythm for ${tile.name}, ${dims}`}
+      >
+        <rect
+          x={pad}
+          y={pad}
+          width={w}
+          height={h}
+          fill={tile.color}
+          stroke="#f3ebe1"
+          strokeWidth={1.5}
+        />
+        {SIDES.map((side) => {
+          const r = tile.rhythm?.[side];
+          if (!r) return null;
+          const label = `${r.name}${r.mirrored ? '′' : ''}`;
+          const pos =
+            side === 'south'
+              ? { x: pad + w / 2, y: pad + h + 14 }
+              : side === 'north'
+                ? { x: pad + w / 2, y: pad - 10 }
+                : side === 'east'
+                  ? { x: pad + w + 14, y: pad + h / 2 }
+                  : { x: pad - 14, y: pad + h / 2 };
+          return (
+            <text
+              key={side}
+              x={pos.x}
+              y={pos.y}
+              fill="#b5a89a"
+              fontSize={11}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontFamily="Fragment Mono, monospace"
+            >
+              {label}
+            </text>
+          );
+        })}
+      </svg>
+      <p className="muted mono" style={{ margin: 0, fontSize: '0.8rem' }}>
+        {dims}
+      </p>
+    </div>
   );
 }
 

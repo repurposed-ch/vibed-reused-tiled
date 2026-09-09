@@ -29,6 +29,20 @@ body,
 #root {
   min-height: 100%;
   margin: 0;
+  max-width: 100%;
+}
+
+body,
+.app-shell {
+  overflow-x: clip;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  max-width: 100%;
+  width: 100%;
 }
 
 button,
@@ -36,12 +50,6 @@ input,
 select,
 textarea {
   font: inherit;
-}
-
-.app-shell {
-  min-height: 100dvh;
-  display: grid;
-  grid-template-rows: auto 1fr;
 }
 
 .app-header {
@@ -67,6 +75,12 @@ textarea {
   gap: 0.75rem;
   align-items: center;
   min-width: 0;
+  flex: 1;
+}
+
+.brand > div {
+  min-width: 0;
+  flex: 1;
 }
 
 .brand-mark {
@@ -222,15 +236,27 @@ textarea {
 .app-main {
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  max-width: 1200px;
+  max-width: min(1200px, 100%);
   width: 100%;
   margin: 0 auto;
+  min-width: 0;
 }
 
 .app-main--flush {
-  max-width: none;
+  max-width: 100%;
   margin: 0;
   padding: 0;
+}
+
+.page {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.page h1 {
+  margin: 0 0 0.35rem;
+  font-size: clamp(1.25rem, 4vw, 1.6rem);
+  font-weight: 600;
 }
 
 @media (max-width: 640px) {
@@ -238,12 +264,6 @@ textarea {
     padding: 0.85rem;
     padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
   }
-}
-
-.page h1 {
-  margin: 0 0 0.35rem;
-  font-size: 1.6rem;
-  font-weight: 600;
 }
 
 .page .lede {
@@ -257,6 +277,8 @@ textarea {
   border: 1px solid var(--line);
   padding: 1rem;
   margin-bottom: 1rem;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .panel h2 {
@@ -332,6 +354,7 @@ textarea {
   padding: 0.55rem 0.85rem;
   cursor: pointer;
   min-height: 44px;
+  max-width: 100%;
 }
 
 .btn:hover {
@@ -361,6 +384,8 @@ textarea {
 .split {
   display: grid;
   gap: 1rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (min-width: 900px) {
@@ -374,6 +399,7 @@ textarea {
 
 .table-scroll {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -418,6 +444,43 @@ textarea {
   border: 1px solid var(--line);
   min-height: 320px;
   overflow: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.canvas-frame svg,
+.page svg,
+.panel svg,
+.fluid-svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+pre.mono,
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+  word-break: break-word;
+}
+
+.field-textarea-tall {
+  min-height: 22rem;
+}
+
+@media (max-width: 640px) {
+  .field-textarea-tall {
+    min-height: 12rem;
+  }
+
+  .view3d-overlay .row {
+    width: 100%;
+  }
+
+  .view3d-overlay .btn {
+    flex: 1 1 auto;
+  }
 }
 
 .pill {
@@ -447,8 +510,10 @@ textarea {
   position: relative;
   height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px));
   width: 100%;
+  max-width: 100%;
   background: var(--bg0);
   touch-action: none;
+  overflow: hidden;
 }
 
 .view3d-fullscreen .view3d-canvas {
@@ -487,6 +552,7 @@ textarea {
 
 .view3d-overlay .row {
   align-items: center;
+  max-width: 100%;
 }
 
 .view3d-ar-host {

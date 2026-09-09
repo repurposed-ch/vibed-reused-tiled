@@ -332,7 +332,7 @@ type DesignInstanceJson = {
 | `#/solve`         | Sample stock, run solver, inspect instance                        |
 | `#/view/2d`       | SVG view + PDF export                                             |
 | `#/view/3d`       | R3F view + GLB / USDZ export                                      |
-| `#/settings`      | Gemini API key / model (local only)                               |
+| `#/settings`      | LLM provider / model / API key (local only)                       |
 
 ### 6.2 GitHub Pages
 
@@ -370,20 +370,20 @@ Primary module order (`primaryModuleIds`) is editable for solver priority.
 
 ## 8. Optional LLM assist
 
-GitHub Pages is static: no secret backend in this repo. Hackathon demos call Gemini `generateContent` directly from the browser with a user-supplied API key.
+GitHub Pages is static: no secret backend in this repo. The client calls free-tier providers from the browser (Gemini native API, or OpenAI-compatible `chat/completions`). Catalog curated from [awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis). Cloudflare Workers AI and Cohere are skipped (account id / non-OpenAI shape).
 
 ```mermaid
 sequenceDiagram
   participant User
   participant UI as DesignFamilyUI
   participant Client as LlmClient
-  participant Gemini as GeminiGenerateContent
+  participant Provider as FreeTierProvider
 
   User->>UI: prompt + review current family
   UI->>Client: tile catalog + stock hints + prompt + family JSON
   Client->>Client: build text prompt + DesignFamily schema hint
-  Client->>Gemini: POST generateContent with X-goog-api-key
-  Gemini-->>Client: candidates text / JSON
+  Client->>Provider: Gemini generateContent or OpenAI chat/completions
+  Provider-->>Client: text / JSON
   Client->>Client: extract JSON + Zod validate DesignFamilyJson
   Client-->>UI: proposed family
   User->>UI: accept or discard
@@ -391,11 +391,10 @@ sequenceDiagram
 
 **Rules**
 
-- Model from `#/settings` and/or `VITE_GEMINI_MODEL` (default `gemini-3.7-flash`)
-- API key in **localStorage / session only** — never committed; sent as `X-goog-api-key`
+- Provider + model from `#/settings` (defaults: OVHcloud anonymous, first model); optional `VITE_LLM_PROVIDER` / `VITE_LLM_MODEL`
+- API key in **localStorage only** when the provider requires one; keyless providers (OVHcloud, LLM7, Kilo) enable Assist without a key
 - Response must parse as `DesignFamilyJson` via Zod; invalid responses are rejected with an error
-- Assist UI disabled until an API key is configured
-- Production: prefer a small proxy (e.g. Cloudflare Worker) that holds the provider key if CORS or key restrictions block browser use
+- CORS or key restrictions may block some browser calls — switch provider or use a proxy for production
 
 **Request shape (conceptual)**
 
@@ -408,7 +407,7 @@ type LlmAssistRequest = {
 };
 ```
 
-The client wraps this into Gemini `contents[].parts[].text` and asks for DesignFamily JSON only.
+The client wraps this into a text prompt and asks for DesignFamily JSON only.
 ---
 
 ## 9. Rendering and export
@@ -475,7 +474,7 @@ Phases 0–3 unlock authoring and deploy; 4–6 close the generate → visualize
 | Vite base        | `/vibed-reused-tiled/`                                       |
 | Tooling          | Bun                                                          |
 | Validation       | Zod                                                          |
-| LLM              | Optional; browser → Gemini generateContent; validate before apply |
+| LLM              | Optional; browser → free-tier providers (Gemini or OpenAI-compat); validate before apply |
 | Persistence      | Single `TilingProjectJson` file                              |
 
 ---

@@ -5,10 +5,10 @@ import type { TileDefinitionJson } from '@/domain/tile';
 export function ModulePreviewSvg({
   module,
   tiles,
-  scale = 80,
 }: {
   module: DesignModuleJson;
   tiles: TileDefinitionJson[];
+  /** @deprecated ignored — SVG is fluid to container width */
   scale?: number;
 }) {
   const tileMap = new Map(tiles.map((t) => [t.id, t]));
@@ -24,11 +24,18 @@ export function ModulePreviewSvg({
   }
 
   const pad = 0.1;
-  const width = (maxX + pad * 2) * scale;
-  const height = (maxY + pad * 2) * scale;
+  const vbW = maxX + pad * 2;
+  const vbH = maxY + pad * 2;
 
   return (
-    <svg width={width} height={height} viewBox={`${-pad} ${-pad} ${maxX + pad * 2} ${maxY + pad * 2}`}>
+    <svg
+      className="fluid-svg"
+      viewBox={`${-pad} ${-pad} ${vbW} ${vbH}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ aspectRatio: `${vbW} / ${vbH}` }}
+      role="img"
+      aria-label="Module preview"
+    >
       {module.placements.map((pl) => {
         const t = tileMap.get(pl.tileDefinitionId);
         if (!t) return null;

@@ -76,9 +76,9 @@ export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJs
 
 export function BoundarySvg({
   boundaries,
-  scale = 60,
 }: {
   boundaries: BoundaryConditionsJson;
+  /** @deprecated ignored — SVG is fluid to container width */
   scale?: number;
 }) {
   let minX = 0;
@@ -94,12 +94,19 @@ export function BoundarySvg({
     }
   }
   const pad = 0.2;
-  const vb = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
-  const w = (maxX - minX + pad * 2) * scale;
-  const h = (maxY - minY + pad * 2) * scale;
+  const vbW = maxX - minX + pad * 2;
+  const vbH = maxY - minY + pad * 2;
+  const vb = `${minX - pad} ${minY - pad} ${vbW} ${vbH}`;
 
   return (
-    <svg width={w} height={h} viewBox={vb}>
+    <svg
+      className="fluid-svg"
+      viewBox={vb}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ aspectRatio: `${Math.max(vbW, 0.01)} / ${Math.max(vbH, 0.01)}` }}
+      role="img"
+      aria-label="Boundary preview"
+    >
       <BoundaryPaths boundaries={boundaries} />
     </svg>
   );
