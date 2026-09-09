@@ -1,0 +1,34 @@
+import { HashRouter, Route, Routes } from 'react-router-dom';
+import { AppLayout } from './layout';
+import { ProjectProvider } from './project-context';
+import { OverviewPage } from './pages/overview';
+import { TilesPage } from './pages/tiles';
+import { StockPage } from './pages/stock';
+import { DesignFamilyPage } from './pages/design-family';
+import { BoundariesPage } from './pages/boundaries';
+import { SolvePage } from './pages/solve';
+import { View2dPage } from './pages/view-2d';
+import { View3dPage } from './pages/view-3d';
+import { SettingsPage } from './pages/settings';
+
+export function App() {
+  return (
+    <ProjectProvider>
+      <HashRouter>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<OverviewPage />} />
+            <Route path="tiles" element={<TilesPage />} />
+            <Route path="stock" element={<StockPage />} />
+            <Route path="design-family" element={<DesignFamilyPage />} />
+            <Route path="boundaries" element={<BoundariesPage />} />
+            <Route path="solve" element={<SolvePage />} />
+            <Route path="view/2d" element={<View2dPage />} />
+            <Route path="view/3d" element={<View3dPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </ProjectProvider>
+  );
+}
