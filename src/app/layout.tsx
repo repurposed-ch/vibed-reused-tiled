@@ -7,6 +7,7 @@ const DESKTOP_MQ = '(min-width: 1081px)';
 const links = [
   { to: '/', label: 'Project', end: true },
   { to: '/tiles', label: 'Tiles' },
+  { to: '/materials', label: 'Materials' },
   { to: '/stock', label: 'Stock' },
   { to: '/design-family', label: 'Design family' },
   { to: '/boundaries', label: 'Boundaries' },

@@ -1,4 +1,3 @@
-import { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from 'react';
 import {
   createDefaultProject,
   parseTilingProject,
@@ -8,11 +7,13 @@ import {
   type DesignInstanceJson,
   type TilingProjectJson,
 } from '@/domain/project';
+import { getBakedDataUrl } from '@/render/materials';
 import {
   DEFAULT_LLM_PROVIDER_ID,
   getProvider,
   resolveModelForProvider,
 } from '@/llm/providers';
+import { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from 'react';
 
 const STORAGE_KEY = 'vibed-tiling-project';
 const SETTINGS_KEY = 'vibed-llm-settings';
@@ -115,7 +116,21 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [updateProject]);
 
   const downloadProject = useCallback(() => {
-    const blob = new Blob([projectToJsonString(project)], { type: 'application/json' });
+    const materialMap = new Map(project.materials.map((m) => [m.id, m]));
+    const withTextures: TilingProjectJson = {
+      ...project,
+      tileDefinitions: project.tileDefinitions.map((tile) => {
+        const material = materialMap.get(tile.materialId);
+        if (!material) return tile;
+        try {
+          const texture = getBakedDataUrl(material, tile.color);
+          return { ...tile, texture };
+        } catch {
+          return tile;
+        }
+      }),
+    };
+    const blob = new Blob([projectToJsonString(withTextures)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

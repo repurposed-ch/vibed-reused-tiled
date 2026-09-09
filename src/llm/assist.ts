@@ -1,6 +1,8 @@
 import {
   DesignFamilyJsonSchema,
+  MaterialDefinitionJsonSchema,
   type DesignFamilyJson,
+  type MaterialDefinitionJson,
   type StockStateJson,
   type TileDefinitionJson,
 } from '@/domain/project';
@@ -263,7 +265,7 @@ async function callGeminiGenerateContent(args: {
   apiKey: string;
   model: string;
   prompt: string;
-}): Promise<DesignFamilyJson> {
+}): Promise<string> {
   const model = args.model.replace(/^models\//, '');
   const url = `${GEMINI_BASE}/${encodeURIComponent(model)}:generateContent`;
   const result = await fetchWithRetry(url, {
@@ -281,7 +283,7 @@ async function callGeminiGenerateContent(args: {
   if (!result.ok) {
     throw new Error(`LLM assist failed (${result.status}): ${result.text}${statusHint(result.status)}`);
   }
-  return parseFamilyJson(extractGeminiText(result.json));
+  return extractGeminiText(result.json);
 }
 
 async function callOpenAiChatCompletions(args: {
@@ -289,7 +291,7 @@ async function callOpenAiChatCompletions(args: {
   apiKey: string;
   model: string;
   prompt: string;
-}): Promise<DesignFamilyJson> {
+}): Promise<string> {
   const url = `${args.provider.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -330,15 +332,15 @@ async function callOpenAiChatCompletions(args: {
   if (!result.ok) {
     throw new Error(`LLM assist failed (${result.status}): ${result.text}${statusHint(result.status)}`);
   }
-  return parseFamilyJson(extractOpenAiText(result.json));
+  return extractOpenAiText(result.json);
 }
 
-export async function assistDesignFamily(args: {
+async function callLlmText(args: {
   provider: string;
   model: string;
   apiKey?: string;
-  request: LlmAssistRequest;
-}): Promise<DesignFamilyJson> {
+  prompt: string;
+}): Promise<string> {
   const provider = getProvider(args.provider);
   const model = resolveModelForProvider(provider, args.model);
   const apiKey = args.apiKey?.trim() ?? '';
@@ -347,11 +349,112 @@ export async function assistDesignFamily(args: {
     throw new Error(`${provider.label} API key is not configured`);
   }
 
-  const prompt = buildUserPrompt(args.request);
-
   if (provider.auth === 'gemini-header') {
-    return callGeminiGenerateContent({ apiKey, model, prompt });
+    return callGeminiGenerateContent({ apiKey, model, prompt: args.prompt });
   }
 
-  return callOpenAiChatCompletions({ provider, apiKey, model, prompt });
+  return callOpenAiChatCompletions({ provider, apiKey, model, prompt: args.prompt });
+}
+
+export async function assistDesignFamily(args: {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  request: LlmAssistRequest;
+}): Promise<DesignFamilyJson> {
+  const text = await callLlmText({
+    provider: args.provider,
+    model: args.model,
+    apiKey: args.apiKey,
+    prompt: buildUserPrompt(args.request),
+  });
+  return parseFamilyJson(text);
+}
+
+const MATERIAL_SCHEMA_HINT = `{
+  "type": "MaterialDefinition",
+  "id": "string uuid",
+  "name": "short material name e.g. terracotta",
+  "seed": 1,
+  "periodMeters": 0.3,
+  "sdf": {
+    "op": "mix | mul | add | union | subtract | intersect | smoothUnion | translate | rotate | scale | repeat | mirror | circle | box | ring | line | noise | voronoi | brick | band | fill",
+    "...": "recursive SDF / procedural graph; sampling is periodic over periodMeters so the bake is edge-repeating"
+  }
+}
+
+SDF node examples:
+{ "op": "noise", "scale": 6, "octaves": 4 }
+{ "op": "voronoi", "scale": 5, "edgeWidth": 0.08 }
+{ "op": "brick", "brickW": 0.15, "brickH": 0.08, "mortar": 0.012, "offset": 0.5 }
+{ "op": "mix", "t": 0.5, "a": { "op": "noise", "scale": 4 }, "b": { "op": "voronoi", "scale": 3 } }
+{ "op": "fill", "soft": 0.02, "child": { "op": "circle", "radius": 0.05, "center": [0.1, 0.1] } }
+{ "op": "repeat", "period": [0.15, 0.15], "child": { "op": "circle", "radius": 0.03 } }`;
+
+export type LlmMaterialAssistRequest = {
+  prompt: string;
+  currentMaterial?: MaterialDefinitionJson;
+};
+
+function unwrapMaterial(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data;
+  const obj = data as Record<string, unknown>;
+  if (obj.type === 'MaterialDefinition') return obj;
+  if (obj.material) return obj.material;
+  if (typeof obj.content === 'string') {
+    try {
+      return unwrapMaterial(JSON.parse(obj.content) as unknown);
+    } catch {
+      return data;
+    }
+  }
+  return data;
+}
+
+function parseMaterialJson(text: string): MaterialDefinitionJson {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCodeFences(text)) as unknown;
+  } catch {
+    throw new Error('LLM assist failed: model reply was not valid JSON');
+  }
+  return MaterialDefinitionJsonSchema.parse(unwrapMaterial(parsed));
+}
+
+function buildMaterialPrompt(request: LlmMaterialAssistRequest): string {
+  const parts = [
+    'You are assisting a reused-tile design tool.',
+    'Return ONLY a single MaterialDefinition JSON object matching this schema (no markdown, no commentary):',
+    MATERIAL_SCHEMA_HINT,
+    '',
+    'Designer request:',
+    request.prompt.trim(),
+  ];
+  if (request.currentMaterial) {
+    parts.push(
+      '',
+      'Current material to revise (JSON):',
+      JSON.stringify(request.currentMaterial),
+    );
+  }
+  parts.push(
+    '',
+    'Rules: the SDF must be seamlessly tileable (periodic over periodMeters); prefer noise/voronoi/brick/mix; invent a new uuid for id unless revising; keep periodMeters between 0.1 and 1.0; seed is an integer.',
+  );
+  return parts.join('\n');
+}
+
+export async function assistMaterial(args: {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  request: LlmMaterialAssistRequest;
+}): Promise<MaterialDefinitionJson> {
+  const text = await callLlmText({
+    provider: args.provider,
+    model: args.model,
+    apiKey: args.apiKey,
+    prompt: buildMaterialPrompt(args.request),
+  });
+  return parseMaterialJson(text);
 }

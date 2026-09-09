@@ -127,7 +127,7 @@ function scoreCandidate(
 
     for (const c of family.constraints) {
       if (c.kind === 'materialAlternate' && touching) {
-        if (tile.material !== ot.material) score += c.weight;
+        if (tile.materialId !== ot.materialId) score += c.weight;
       }
       if (c.kind === 'adjacencyPrefer' && touching) {
         score += c.weight * 0.5;

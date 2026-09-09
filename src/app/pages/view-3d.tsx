@@ -291,6 +291,7 @@ export function View3dPage() {
               exportRootRef={exportRootRef}
               instance={project.instance}
               tiles={project.tileDefinitions}
+              materials={project.materials}
             />
           </Suspense>
         </Canvas>

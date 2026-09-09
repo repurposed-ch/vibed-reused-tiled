@@ -121,8 +121,10 @@ All domain types are JSON-serializable. Math geometry reuses the existing `type`
 /** Root document — load / upload this file. */
 type TilingProjectJson = {
   type: 'TilingProject';
-  schemaVersion: 1;
+  schemaVersion: 2;
   meta?: { name?: string; updatedAt?: string };
+  /** SDF material recipes (compiled to GLSL and baked at runtime). */
+  materials: MaterialDefinitionJson[];
   tileDefinitions: TileDefinitionJson[];
   stock: StockStateJson;
   designFamily: DesignFamilyJson;
@@ -132,9 +134,23 @@ type TilingProjectJson = {
 };
 ```
 
-### 4.1 Tile definition
+### 4.1 Materials and tile definition
 
-Rectangles with material, color, and optional **rhythm** on facade sides. Rhythm names (and mirror flags) let matching sides pair during composition (e.g. side `A` with mirrored `A`).
+**Materials** are declarative seamless SDF graphs. At runtime they compile to GLSL and bake to a 1024×1024 edge-repeating albedo (WebGL2 `OffscreenCanvas`). Layout 2D still uses the tile’s active color only; the Tiles authoring preview and 3D / GLB / USDZ use the bake.
+
+```ts
+type MaterialDefinitionJson = {
+  type: 'MaterialDefinition';
+  id: string;
+  name: string;
+  seed: number;
+  /** World-space UV period in meters */
+  periodMeters: number;
+  sdf: SdfNodeJson; // tagged union: noise, voronoi, brick, circle, union, mix, …
+};
+```
+
+Rectangles reference a material, own color swatches, and optional **rhythm** on facade sides.
 
 **Local frame convention:** corner at local origin; **+X = length**, **+Y = width**; thickness is along **+Z** in 3D.
 
@@ -156,9 +172,14 @@ type TileDefinitionJson = {
   length: number;
   width: number;
   thickness: number;
-  material: string;
-  /** CSS color or hex */
+  /** References materials[].id */
+  materialId: string;
+  /** Color swatches (hex) */
+  colors: string[];
+  /** Active swatch — 2D fill + bake tint */
   color: string;
+  /** Optional cached bake (data URL); filled on project download */
+  texture?: string;
   /** Optional; omit sides that have no rhythm role */
   rhythm?: Partial<Record<FacadeSide, RhythmSideJson>>;
 };
@@ -416,18 +437,20 @@ The client wraps this into a text prompt and asks for DesignFamily JSON only.
 
 - For each `PlacementJson`, apply `mat3` to the tile rectangle `(0,0)–(length,width)`.
 - Emit SVG `<g transform="matrix(a,b,c,d,e,f)">` (map from column-major `Mat3`).
-- Draw fill from `color`; optional rhythm labels on edges.
+- Draw fill from active `color` only (no textures in the layout 2D view).
 - Boundaries / guides as underlay.
 - PDF: print stylesheet or SVG→PDF helper from the 2D view.
+- Tile definitions authoring preview uses the baked texture with rhythm labels overlaid.
 
 ### 9.2 3D (R3F) and AR export
 
 - Extrude each tile by `thickness` along local +Z; apply world transform from `mat3` (planar XY) + Z = 0 (or project convention).
-- Materials from `material` / `color`.
+- Albedo from GLSL-baked 1024² seamless texture (`materialId` SDF + active `color` tint); `texture.repeat` = tile size / `periodMeters`.
 - Export runs **entirely in the browser** from the R3F tile export group (no server, no `usd_from_gltf`):
-  - **GLB** via Three.js `GLTFExporter`
+  - **GLB** via Three.js `GLTFExporter` (embedded baked images)
   - **USDZ** via Three.js `USDZExporter` (`quickLookCompatible`, horizontal plane anchoring) for Quick Look / `model-viewer` `ios-src`
 - Decorative floor / helpers use `userData.export === false` and are omitted from downloads.
+- Project JSON download embeds optional `tile.texture` data URLs from the bake cache.
 
 ---
 

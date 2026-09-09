@@ -3,6 +3,7 @@ import { AppLayout } from './layout';
 import { ProjectProvider } from './project-context';
 import { OverviewPage } from './pages/overview';
 import { TilesPage } from './pages/tiles';
+import { MaterialsPage } from './pages/materials';
 import { StockPage } from './pages/stock';
 import { DesignFamilyPage } from './pages/design-family';
 import { BoundariesPage } from './pages/boundaries';
@@ -19,6 +20,7 @@ export function App() {
           <Route element={<AppLayout />}>
             <Route index element={<OverviewPage />} />
             <Route path="tiles" element={<TilesPage />} />
+            <Route path="materials" element={<MaterialsPage />} />
             <Route path="stock" element={<StockPage />} />
             <Route path="design-family" element={<DesignFamilyPage />} />
             <Route path="boundaries" element={<BoundariesPage />} />
