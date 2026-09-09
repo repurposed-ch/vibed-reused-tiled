@@ -32,8 +32,7 @@ body,
   max-width: 100%;
 }
 
-body,
-.app-shell {
+body {
   overflow-x: clip;
 }
 
@@ -54,7 +53,7 @@ textarea {
 
 .app-header {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.75rem 1rem;
   align-items: center;
   justify-content: space-between;
   padding: 0.65rem 1rem;
@@ -62,11 +61,10 @@ textarea {
   padding-left: calc(1rem + env(safe-area-inset-left, 0px));
   padding-right: calc(1rem + env(safe-area-inset-right, 0px));
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg1) 88%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--bg1);
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: 100;
   min-height: var(--header-height);
 }
 
@@ -75,7 +73,7 @@ textarea {
   gap: 0.75rem;
   align-items: center;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .brand > div {
@@ -115,6 +113,63 @@ textarea {
 @media (max-width: 640px) {
   .brand-sub {
     display: none;
+  }
+}
+
+.app-nav-inline {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.nav-link {
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.inline-link {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.inline-link:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.inline-link.active,
+.drawer-link.active {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  font-weight: 600;
+}
+
+@media (min-width: 1081px) {
+  .app-nav-inline {
+    display: flex;
+  }
+
+  .menu-toggle,
+  .nav-backdrop,
+  .app-nav-drawer {
+    display: none !important;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 1080px) {
+  .app-nav-inline {
+    display: none !important;
   }
 }
 
@@ -164,7 +219,7 @@ textarea {
 .nav-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 45;
+  z-index: 110;
   border: 0;
   padding: 0;
   margin: 0;
@@ -176,7 +231,7 @@ textarea {
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 50;
+  z-index: 120;
   width: min(20rem, 100vw);
   height: 100dvh;
   display: flex;
@@ -227,12 +282,6 @@ textarea {
   border-color: var(--line);
 }
 
-.drawer-link.active {
-  color: var(--ink);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
 .app-main {
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
@@ -240,6 +289,9 @@ textarea {
   width: 100%;
   margin: 0 auto;
   min-width: 0;
+  overflow-x: clip;
+  position: relative;
+  z-index: 0;
 }
 
 .app-main--flush {
@@ -508,18 +560,34 @@ pre {
 /* Fullscreen 3D */
 .view3d-fullscreen {
   position: relative;
+  z-index: 0;
   height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px));
   width: 100%;
   max-width: 100%;
   background: var(--bg0);
   touch-action: none;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .view3d-fullscreen .view3d-canvas {
   position: absolute;
   inset: 0;
+  z-index: 0;
   touch-action: none;
+}
+
+.view3d-fullscreen .view3d-canvas > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.view3d-fullscreen .view3d-canvas canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  position: relative;
+  z-index: 0;
 }
 
 .view3d-overlay {

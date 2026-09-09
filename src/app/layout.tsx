@@ -2,6 +2,8 @@ import { useEffect, useId, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import './layout.css';
 
+const DESKTOP_MQ = '(min-width: 1081px)';
+
 const links = [
   { to: '/', label: 'Project', end: true },
   { to: '/tiles', label: 'Tiles' },
@@ -14,6 +16,13 @@ const links = [
   { to: '/settings', label: 'Settings' },
 ] as const;
 
+function linkClassName(variant: 'inline' | 'drawer') {
+  return ({ isActive }: { isActive: boolean }) => {
+    const base = variant === 'inline' ? 'nav-link inline-link' : 'nav-link drawer-link';
+    return isActive ? `${base} active` : base;
+  };
+}
+
 export function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -23,6 +32,16 @@ export function AppLayout() {
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const onChange = () => {
+      if (mq.matches) setMenuOpen(false);
+    };
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -48,6 +67,20 @@ export function AppLayout() {
             <p className="brand-sub">Design families under uncertain stock</p>
           </div>
         </div>
+
+        <nav className="app-nav-inline" aria-label="Workflow stages">
+          {links.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={'end' in link ? link.end : false}
+              className={linkClassName('inline')}
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </nav>
+
         <button
           type="button"
           className="menu-toggle"
@@ -86,7 +119,7 @@ export function AppLayout() {
             key={link.to}
             to={link.to}
             end={'end' in link ? link.end : false}
-            className={({ isActive }) => (isActive ? 'nav-link drawer-link active' : 'nav-link drawer-link')}
+            className={linkClassName('drawer')}
             onClick={() => setMenuOpen(false)}
           >
             {link.label}

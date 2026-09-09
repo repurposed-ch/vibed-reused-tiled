@@ -32,6 +32,17 @@ export function translationMat3(x: number, y: number): Mat3Json {
   };
 }
 
+/** Accept Mat3 objects or bare 9-number arrays (common LLM mistake). */
+export function coerceMat3Json(value: unknown): unknown {
+  if (Array.isArray(value) && value.length === 9 && value.every((n) => typeof n === 'number')) {
+    return {
+      type: 'Mat3',
+      elements: value as Mat3Json['elements'],
+    };
+  }
+  return value;
+}
+
 /** Multiply two column-major Mat3Json values: result = a * b. */
 export function multiplyMat3(a: Mat3Json, b: Mat3Json): Mat3Json {
   const ae = a.elements;

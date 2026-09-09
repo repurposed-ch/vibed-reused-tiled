@@ -4,6 +4,7 @@ import {
   type StockStateJson,
   type TileDefinitionJson,
 } from '@/domain/project';
+import { coerceMat3Json } from '@/domain/mat3';
 import {
   getProvider,
   providerRequiresApiKey,
@@ -35,12 +36,20 @@ const SCHEMA_HINT = `{
         {
           "id": "string",
           "tileDefinitionId": "string (must match an available tile id)",
-          "localMat3": [1, 0, 0, 0, 1, 0, "x", "y", 1],
+          "localMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, "x", "y", 1] },
           "role": "optional string"
         }
       ],
-      "children": [{"moduleId": "string", "localMat3": [1,0,0,0,1,0,0,0,1]}],
-      "repeat": {"count": 2, "offsetMat3": [1,0,0,0,1,0,"dx","dy",1]},
+      "children": [
+        {
+          "moduleId": "string",
+          "localMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, 0, 0, 1] }
+        }
+      ],
+      "repeat": {
+        "count": 2,
+        "offsetMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, "dx", "dy", 1] }
+      },
       "anchor": "origin" | "centroid" | "bboxMin"
     }
   ],
@@ -71,6 +80,42 @@ function unwrapFamily(data: unknown): unknown {
   return data;
 }
 
+/** Coerce bare Mat3 arrays inside a DesignFamily-shaped object. */
+function normalizeFamilyMat3s(data: unknown): unknown {
+  if (typeof data !== 'object' || data === null) return data;
+  const family = data as Record<string, unknown>;
+  const modules = family.modules;
+  if (!Array.isArray(modules)) return data;
+
+  return {
+    ...family,
+    modules: modules.map((mod) => {
+      if (typeof mod !== 'object' || mod === null) return mod;
+      const m = mod as Record<string, unknown>;
+      const placements = Array.isArray(m.placements)
+        ? m.placements.map((pl) => {
+            if (typeof pl !== 'object' || pl === null) return pl;
+            const p = pl as Record<string, unknown>;
+            return { ...p, localMat3: coerceMat3Json(p.localMat3) };
+          })
+        : m.placements;
+      const children = Array.isArray(m.children)
+        ? m.children.map((ch) => {
+            if (typeof ch !== 'object' || ch === null) return ch;
+            const c = ch as Record<string, unknown>;
+            return { ...c, localMat3: coerceMat3Json(c.localMat3) };
+          })
+        : m.children;
+      let repeat = m.repeat;
+      if (typeof repeat === 'object' && repeat !== null) {
+        const r = repeat as Record<string, unknown>;
+        repeat = { ...r, offsetMat3: coerceMat3Json(r.offsetMat3) };
+      }
+      return { ...m, placements, children, repeat };
+    }),
+  };
+}
+
 function stripCodeFences(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -80,7 +125,7 @@ function stripCodeFences(text: string): string {
 function buildUserPrompt(request: LlmAssistRequest): string {
   const parts = [
     'You are assisting a reused-tile design tool.',
-    'Return ONLY a single JSON object matching this DesignFamily schema (no markdown, no commentary):',
+    'Return ONLY a single DesignFamily JSON object matching this schema (no markdown, no commentary):',
     SCHEMA_HINT,
     '',
     'Designer request:',
@@ -97,7 +142,7 @@ function buildUserPrompt(request: LlmAssistRequest): string {
   }
   parts.push(
     '',
-    'Rules: use only tileDefinitionId values from the tile definitions; keep mat3 as 9-number row-major arrays; invent new uuids for new ids.',
+    'Rules: use only tileDefinitionId values from the tile definitions; every Mat3 must be {"type":"Mat3","elements":[9 numbers]} (column-major; translation in elements[6] and elements[7]); invent new uuids for new ids.',
   );
   return parts.join('\n');
 }
@@ -109,7 +154,7 @@ function parseFamilyJson(text: string): DesignFamilyJson {
   } catch {
     throw new Error('LLM assist failed: model reply was not valid JSON');
   }
-  return DesignFamilyJsonSchema.parse(unwrapFamily(parsed));
+  return DesignFamilyJsonSchema.parse(normalizeFamilyMat3s(unwrapFamily(parsed)));
 }
 
 function extractGeminiText(json: unknown): string {
