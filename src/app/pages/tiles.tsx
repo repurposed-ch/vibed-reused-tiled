@@ -149,7 +149,7 @@ export function TilesPage() {
                     />
                   </div>
                 </div>
-                <table className="table">
+                <div className="table-scroll"><table className="table">
                   <thead>
                     <tr>
                       <th>Side</th>
@@ -179,7 +179,7 @@ export function TilesPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
                 <button
                   type="button"
                   className="btn danger"

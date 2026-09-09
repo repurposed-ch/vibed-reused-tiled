@@ -29,8 +29,8 @@ See [`architecture.md`](architecture.md) for schemas, workflow layers, design-fa
 
 ## LLM assist (optional)
 
-1. Open `#/settings` and set a proxy endpoint (and API key if needed). Keys stay in `localStorage`.
-2. Or set `VITE_LLM_PROXY_URL` at build time (see [`.env.example`](.env.example)).
+1. Open `#/settings` and set a Gemini API key (and model if needed). Keys stay in `localStorage`.
+2. Or set `VITE_GEMINI_MODEL` at build time for the default model (see [`.env.example`](.env.example)).
 3. On `#/design-family`, use **Assist with LLM**. Responses must validate as `DesignFamily` JSON before apply.
 
-Prefer a small proxy that holds the provider secret; direct browser→provider is for local demos only.
+The browser calls Google `generateContent` with `X-goog-api-key`. Create a key in [Google AI Studio](https://aistudio.google.com/apikey) and rotate any key that was shared. For production, prefer a small proxy that holds the provider secret (CORS / key restrictions can block browser calls).

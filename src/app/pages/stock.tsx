@@ -20,7 +20,7 @@ export function StockPage() {
       </p>
 
       <section className="panel">
-        <table className="table">
+        <div className="table-scroll"><table className="table">
           <thead>
             <tr>
               <th>Tile</th>
@@ -131,7 +131,7 @@ export function StockPage() {
               );
             })}
           </tbody>
-        </table>
+        </table></div>
       </section>
     </div>
   );

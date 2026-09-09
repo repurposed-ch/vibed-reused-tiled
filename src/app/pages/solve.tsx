@@ -85,7 +85,7 @@ export function SolvePage() {
               placements={project.instance.placements.length} · seed=
               {project.instance.meta?.seed ?? '—'}
             </p>
-            <table className="table">
+            <div className="table-scroll"><table className="table">
               <thead>
                 <tr>
                   <th>#</th>
@@ -109,7 +109,7 @@ export function SolvePage() {
                   );
                 })}
               </tbody>
-            </table>
+            </table></div>
             {project.instance.placements.length > 40 && (
               <p className="muted">Showing first 40 of {project.instance.placements.length}.</p>
             )}

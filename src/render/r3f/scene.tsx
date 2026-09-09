@@ -8,25 +8,39 @@ export function Scene3d({
   instance,
   tiles,
   rootRef,
+  exportRootRef,
 }: {
   instance: DesignInstanceJson;
   tiles: TileDefinitionJson[];
   rootRef: RefObject<Group | null>;
+  /** Tile meshes only (no floor/helpers) — used for GLB / USDZ export. */
+  exportRootRef?: RefObject<Group | null>;
 }) {
   const tileMap = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
 
   return (
     <>
       <group ref={rootRef} rotation={[-Math.PI / 2, 0, 0]}>
-        <mesh position={[2, 1.5, -0.001]} receiveShadow>
+        <mesh position={[2, 1.5, -0.001]} receiveShadow userData={{ export: false }}>
           <planeGeometry args={[20, 20]} />
           <meshStandardMaterial color="#2a241e" side={DoubleSide} />
         </mesh>
-        {instance.placements.map((pl) => {
-          const t = tileMap.get(pl.tileDefinitionId);
-          if (!t) return null;
-          return <TileMesh key={pl.id} length={t.length} width={t.width} thickness={t.thickness} color={t.color} elements={pl.mat3.elements} />;
-        })}
+        <group ref={exportRootRef}>
+          {instance.placements.map((pl) => {
+            const t = tileMap.get(pl.tileDefinitionId);
+            if (!t) return null;
+            return (
+              <TileMesh
+                key={pl.id}
+                length={t.length}
+                width={t.width}
+                thickness={t.thickness}
+                color={t.color}
+                elements={pl.mat3.elements}
+              />
+            );
+          })}
+        </group>
       </group>
       <OrbitControls makeDefault />
     </>

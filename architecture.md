@@ -332,7 +332,7 @@ type DesignInstanceJson = {
 | `#/solve`         | Sample stock, run solver, inspect instance                        |
 | `#/view/2d`       | SVG view + PDF export                                             |
 | `#/view/3d`       | R3F view + GLB / USDZ export                                      |
-| `#/settings`      | LLM endpoint / API key (local only)                               |
+| `#/settings`      | Gemini API key / model (local only)                               |
 
 ### 6.2 GitHub Pages
 
@@ -370,35 +370,32 @@ Primary module order (`primaryModuleIds`) is editable for solver priority.
 
 ## 8. Optional LLM assist
 
-GitHub Pages is static: no secret backend in this repo.
+GitHub Pages is static: no secret backend in this repo. Hackathon demos call Gemini `generateContent` directly from the browser with a user-supplied API key.
 
 ```mermaid
 sequenceDiagram
   participant User
   participant UI as DesignFamilyUI
   participant Client as LlmClient
-  participant Proxy as UserConfiguredProxy
-  participant Model as ProviderLLM
+  participant Gemini as GeminiGenerateContent
 
   User->>UI: prompt + review current family
   UI->>Client: tile catalog + stock hints + prompt + family JSON
-  Client->>Proxy: HTTPS request (key from localStorage if needed)
-  Proxy->>Model: provider call
-  Model-->>Proxy: text / JSON
-  Proxy-->>Client: DesignFamily-shaped payload
-  Client->>Client: Zod validate DesignFamilyJson
+  Client->>Client: build text prompt + DesignFamily schema hint
+  Client->>Gemini: POST generateContent with X-goog-api-key
+  Gemini-->>Client: candidates text / JSON
+  Client->>Client: extract JSON + Zod validate DesignFamilyJson
   Client-->>UI: proposed family
   User->>UI: accept or discard
 ```
 
 **Rules**
 
-- Endpoint from `VITE_LLM_PROXY_URL` and/or `#/settings`
-- API key in **localStorage / session only** — never committed
+- Model from `#/settings` and/or `VITE_GEMINI_MODEL` (default `gemini-3.7-flash`)
+- API key in **localStorage / session only** — never committed; sent as `X-goog-api-key`
 - Response must parse as `DesignFamilyJson` via Zod; invalid responses are rejected with an error
-- Assist UI disabled until endpoint (and key, if required) is configured
-- Production: small proxy (e.g. Cloudflare Worker) holds the provider key
-- Hackathon demos may call a provider directly from the browser with a user-supplied key
+- Assist UI disabled until an API key is configured
+- Production: prefer a small proxy (e.g. Cloudflare Worker) that holds the provider key if CORS or key restrictions block browser use
 
 **Request shape (conceptual)**
 
@@ -411,6 +408,7 @@ type LlmAssistRequest = {
 };
 ```
 
+The client wraps this into Gemini `contents[].parts[].text` and asks for DesignFamily JSON only.
 ---
 
 ## 9. Rendering and export
@@ -427,7 +425,10 @@ type LlmAssistRequest = {
 
 - Extrude each tile by `thickness` along local +Z; apply world transform from `mat3` (planar XY) + Z = 0 (or project convention).
 - Materials from `material` / `color`.
-- Export: GLB from the Three scene; USDZ for AR (pipeline documented in implementation — e.g. GLB → USDZ converter step or library).
+- Export runs **entirely in the browser** from the R3F tile export group (no server, no `usd_from_gltf`):
+  - **GLB** via Three.js `GLTFExporter`
+  - **USDZ** via Three.js `USDZExporter` (`quickLookCompatible`, horizontal plane anchoring) for Quick Look / `model-viewer` `ios-src`
+- Decorative floor / helpers use `userData.export === false` and are omitted from downloads.
 
 ---
 
@@ -458,7 +459,7 @@ Existing building blocks under `src/math` the workflow should prefer:
 | **5 — SVG / PDF**              | `#/view/2d` from instance + tile defs                                                                                                  | Screen SVG + PDF export                                                      |
 | **6 — R3F / GLB / USDZ**       | `#/view/3d` + export pipeline                                                                                                          | Interactive 3D; download GLB and USDZ                                        |
 | **7 — Polish**                 | Load/save UX, multi-sample variants, seed control                                                                                      | Multiple instances from one family + stock distributions                     |
-| **8 — Docs**                   | Pages URL, Bun scripts, LLM proxy notes in `readme.md` / this file                                                                     | Contributor can run locally and deploy without guessing                      |
+| **8 — Docs**                   | Pages URL, Bun scripts, Gemini LLM notes in `readme.md` / this file                                                                    | Contributor can run locally and deploy without guessing                      |
 
 Phases 0–3 unlock authoring and deploy; 4–6 close the generate → visualize → export loop; 7–8 harden the hackathon demo.
 
@@ -474,7 +475,7 @@ Phases 0–3 unlock authoring and deploy; 4–6 close the generate → visualize
 | Vite base        | `/vibed-reused-tiled/`                                       |
 | Tooling          | Bun                                                          |
 | Validation       | Zod                                                          |
-| LLM              | Optional; client → configurable proxy; validate before apply |
+| LLM              | Optional; browser → Gemini generateContent; validate before apply |
 | Persistence      | Single `TilingProjectJson` file                              |
 
 ---

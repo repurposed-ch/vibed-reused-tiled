@@ -8,13 +8,14 @@ import {
   type DesignInstanceJson,
   type TilingProjectJson,
 } from '@/domain/project';
+import { DEFAULT_GEMINI_MODEL } from '@/llm/assist';
 
 const STORAGE_KEY = 'vibed-tiling-project';
 const SETTINGS_KEY = 'vibed-llm-settings';
 
 export type LlmSettings = {
-  endpoint: string;
   apiKey: string;
+  model: string;
 };
 
 type ProjectContextValue = {
@@ -42,22 +43,39 @@ function loadProject(): TilingProjectJson {
   return createDefaultProject();
 }
 
+function defaultModel(): string {
+  const fromEnv = import.meta.env.VITE_GEMINI_MODEL?.trim();
+  if (!fromEnv || fromEnv === 'gemini-flash-latest' || fromEnv === 'gemini-flash') {
+    return DEFAULT_GEMINI_MODEL;
+  }
+  return fromEnv;
+}
+
+function resolveStoredModel(model: string | undefined): string {
+  const trimmed = model?.trim();
+  if (!trimmed || trimmed === 'gemini-flash-latest' || trimmed === 'gemini-flash') {
+    return defaultModel();
+  }
+  return trimmed;
+}
+
 function loadLlmSettings(): LlmSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<LlmSettings>;
+      const parsed = JSON.parse(raw) as Partial<LlmSettings> & { endpoint?: string };
+      // Legacy `endpoint` (proxy URL) is ignored; Gemini is called directly.
       return {
-        endpoint: parsed.endpoint ?? import.meta.env.VITE_LLM_PROXY_URL ?? '',
         apiKey: parsed.apiKey ?? '',
+        model: resolveStoredModel(parsed.model),
       };
     }
   } catch {
     /* ignore */
   }
   return {
-    endpoint: import.meta.env.VITE_LLM_PROXY_URL ?? '',
     apiKey: '',
+    model: defaultModel(),
   };
 }
 

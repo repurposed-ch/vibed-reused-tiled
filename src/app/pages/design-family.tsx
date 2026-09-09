@@ -33,7 +33,7 @@ export function DesignFamilyPage() {
     });
   };
 
-  const assistEnabled = Boolean(llmSettings.endpoint.trim());
+  const assistEnabled = Boolean(llmSettings.apiKey.trim());
 
   return (
     <div className="page">
@@ -179,7 +179,7 @@ export function DesignFamilyPage() {
                 </div>
               </div>
 
-              <table className="table" style={{ marginTop: '0.75rem' }}>
+              <div className="table-scroll"><table className="table" style={{ marginTop: '0.75rem' }}>
                 <thead>
                   <tr>
                     <th>Tile</th>
@@ -247,7 +247,7 @@ export function DesignFamilyPage() {
                     );
                   })}
                 </tbody>
-              </table>
+              </table></div>
 
               <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
                 <ModulePreviewSvg
@@ -261,7 +261,7 @@ export function DesignFamilyPage() {
 
           <section className="panel">
             <h2>Soft constraints</h2>
-            <table className="table">
+            <div className="table-scroll"><table className="table">
               <thead>
                 <tr>
                   <th>Kind</th>
@@ -326,7 +326,7 @@ export function DesignFamilyPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <button
               type="button"
               className="btn"
@@ -399,7 +399,7 @@ export function DesignFamilyPage() {
             <h2>Assist with LLM</h2>
             {!assistEnabled && (
               <p className="muted">
-                Configure an endpoint in Settings to enable assist. Keys stay in localStorage.
+                Configure a Gemini API key in Settings to enable assist. Keys stay in localStorage.
               </p>
             )}
             <div className="field">
@@ -417,8 +417,8 @@ export function DesignFamilyPage() {
                   setProposal(null);
                   try {
                     const result = await assistDesignFamily({
-                      endpoint: llmSettings.endpoint,
                       apiKey: llmSettings.apiKey,
+                      model: llmSettings.model,
                       request: {
                         prompt,
                         tileDefinitions: project.tileDefinitions,
