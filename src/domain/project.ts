@@ -13,6 +13,7 @@ import { StockStateJsonSchema } from './stock';
 import {
   createTileDefinition,
   TileDefinitionJsonSchema,
+  DEFAULT_PALETTE_C,
   type TileColorJson,
 } from './tile';
 
@@ -68,6 +69,16 @@ function hashString(s: string): number {
   return h >>> 0;
 }
 
+function parsePaletteC(raw: unknown): [number, number, number] {
+  if (Array.isArray(raw) && raw.length >= 3) {
+    const x = typeof raw[0] === 'number' ? raw[0] : 1;
+    const y = typeof raw[1] === 'number' ? raw[1] : 1;
+    const z = typeof raw[2] === 'number' ? raw[2] : 1;
+    return [x, y, z];
+  }
+  return [...DEFAULT_PALETTE_C];
+}
+
 function migrateTileColor(t: LegacyTile): TileColorJson {
   const c = t.color;
   if (c && typeof c === 'object' && c !== null && 'mode' in c) {
@@ -78,7 +89,11 @@ function migrateTileColor(t: LegacyTile): TileColorJson {
     if (obj.mode === 'palette' && Array.isArray(obj.colors)) {
       const cols = obj.colors.filter((x): x is string => typeof x === 'string');
       if (cols.length >= 3) {
-        return { mode: 'palette', colors: [cols[0]!, cols[1]!, cols[2]!] };
+        return {
+          mode: 'palette',
+          colors: [cols[0]!, cols[1]!, cols[2]!],
+          c: parsePaletteC(obj.c),
+        };
       }
     }
   }
@@ -94,6 +109,7 @@ function migrateTileColor(t: LegacyTile): TileColorJson {
     return {
       mode: 'palette',
       colors: [t.colors[0]!, t.colors[1]!, t.colors[2]!],
+      c: [...DEFAULT_PALETTE_C],
     };
   }
 
@@ -224,6 +240,7 @@ export function createDefaultProject(): TilingProjectJson {
     color: {
       mode: 'palette',
       colors: ['#b86b3c', '#c47a4a', '#9a5528'],
+      c: [1, 1, 1],
     },
     rhythm: {
       south: { name: 'A', mirrored: false },

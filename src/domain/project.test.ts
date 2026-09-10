@@ -113,6 +113,33 @@ describe('project schema', () => {
     expect(migrated.tileDefinitions[0]?.color).toEqual({
       mode: 'palette',
       colors: ['#111111', '#222222', '#333333'],
+      c: [1, 1, 1],
+    });
+  });
+
+  it('defaults missing palette c to [1,1,1]', () => {
+    const migrated = parseTilingProject({
+      ...createDefaultProject(),
+      tileDefinitions: [
+        {
+          type: 'TileDefinition',
+          id: 't1',
+          name: 'T',
+          length: 0.4,
+          width: 0.4,
+          thickness: 0.02,
+          materialId: createDefaultProject().materials[0]!.id,
+          color: {
+            mode: 'palette',
+            colors: ['#aa0000', '#00aa00', '#0000aa'],
+          },
+        },
+      ],
+    });
+    expect(migrated.tileDefinitions[0]?.color).toEqual({
+      mode: 'palette',
+      colors: ['#aa0000', '#00aa00', '#0000aa'],
+      c: [1, 1, 1],
     });
   });
 
@@ -157,6 +184,7 @@ describe('sdf → glsl', () => {
     const frag = buildBakeFragmentShader(sdf);
     expect(frag).toContain('#version 300 es');
     expect(frag).toContain('iqPalette');
+    expect(frag).toContain('uPalC');
     expect(frag).toContain('shadeEdged');
     expect(frag).toContain('uColorMode');
   });

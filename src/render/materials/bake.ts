@@ -209,6 +209,7 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
 
   if (color.mode === 'palette') {
     const [a, b, d] = color.colors;
+    const [cx, cy, cz] = color.c ?? [1, 1, 1];
     const pa = parseHexRgb(a);
     const pb = parseHexRgb(b);
     const pd = parseHexRgb(d);
@@ -216,6 +217,7 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
     gl.uniform3f(gl.getUniformLocation(program, 'uColor'), 0, 0, 0);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalA'), pa[0], pa[1], pa[2]);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalB'), pb[0], pb[1], pb[2]);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalC'), cx, cy, cz);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalD'), pd[0], pd[1], pd[2]);
   } else {
     const [r, g, bl] = parseHexRgb(color.color);
@@ -223,6 +225,7 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
     gl.uniform3f(gl.getUniformLocation(program, 'uColor'), r, g, bl);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalA'), 0, 0, 0);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalB'), 0, 0, 0);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalC'), 1, 1, 1);
     gl.uniform3f(gl.getUniformLocation(program, 'uPalD'), 0, 0, 0);
   }
 

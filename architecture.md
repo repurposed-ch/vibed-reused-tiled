@@ -148,7 +148,7 @@ type MaterialDefinitionJson = {
 };
 ```
 
-**Tile color:** brightness (one hex → SDF as brightness) or Quilez palette (three hex → `a,b,d` with `c = (1,1,1)`). Hex in JSON; shader uses 0–1 RGB.
+**Tile color:** brightness (one hex → SDF as brightness) or Quilez palette (three hex → `a,b,d`, plus float triple `c` editable with sliders, default `(1,1,1)`). Hex in JSON; shader uses 0–1 RGB for `a,b,d`.
 
 **Rhythm / edges:** omit rhythm → continuous UV; all four sides required for edged UV (SDF mirrored/merged per edge so matching labels stay continuous). Partial rhythm is invalid.
 
@@ -164,7 +164,7 @@ type RhythmSideJson = {
 
 type TileColorJson =
   | { mode: 'brightness'; color: string }
-  | { mode: 'palette'; colors: [string, string, string] };
+  | { mode: 'palette'; colors: [string, string, string]; c: [number, number, number] };
 
 type TileDefinitionJson = {
   type: 'TileDefinition';

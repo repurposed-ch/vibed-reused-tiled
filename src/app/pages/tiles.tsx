@@ -1,5 +1,6 @@
 import {
   createTileDefinition,
+  DEFAULT_PALETTE_C,
   hasCompleteRhythm,
   tileDisplayColor,
   type FacadeSide,
@@ -284,6 +285,10 @@ export function TilesPage() {
                               tile.color.mode === 'palette'
                                 ? tile.color.colors
                                 : [base, base, base],
+                            c:
+                              tile.color.mode === 'palette'
+                                ? tile.color.c
+                                : [...DEFAULT_PALETTE_C],
                           });
                         }}
                       >
@@ -309,32 +314,79 @@ export function TilesPage() {
                     ) : (
                       (() => {
                         const paletteColors = tile.color.colors;
+                        const paletteC = tile.color.c ?? DEFAULT_PALETTE_C;
                         return (
-                          <div className="row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
-                            {(['a', 'b', 'd'] as const).map((label, i) => {
-                              const hex = paletteColors[i]!;
-                              return (
-                                <div key={label} className="field">
-                                  <label>palette {label}</label>
+                          <div className="stack" style={{ gap: '0.75rem' }}>
+                            <div className="row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+                              {(['a', 'b', 'd'] as const).map((label, i) => {
+                                const hex = paletteColors[i]!;
+                                return (
+                                  <div key={label} className="field">
+                                    <label>palette {label}</label>
+                                    <input
+                                      type="color"
+                                      value={hex.startsWith('#') ? hex : '#c4a574'}
+                                      onChange={(e) => {
+                                        const colors: [string, string, string] = [
+                                          paletteColors[0],
+                                          paletteColors[1],
+                                          paletteColors[2],
+                                        ];
+                                        colors[i] = e.target.value;
+                                        setColor(tile.id, {
+                                          mode: 'palette',
+                                          colors,
+                                          c: paletteC,
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="stack" style={{ gap: '0.4rem' }}>
+                              <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+                                Quilez palette(t, a, b, c, d) — adjust c with sliders
+                              </p>
+                              {(['x', 'y', 'z'] as const).map((axis, i) => (
+                                <div
+                                  key={axis}
+                                  className="row"
+                                  style={{ alignItems: 'center', gap: '0.5rem' }}
+                                >
+                                  <label
+                                    className="mono"
+                                    style={{ width: '2.5rem', margin: 0, fontSize: '0.8rem' }}
+                                  >
+                                    c.{axis}
+                                  </label>
                                   <input
-                                    type="color"
-                                    value={hex.startsWith('#') ? hex : '#c4a574'}
+                                    type="range"
+                                    min={0}
+                                    max={2}
+                                    step={0.01}
+                                    value={paletteC[i]!}
+                                    style={{ flex: 1 }}
                                     onChange={(e) => {
-                                      const colors: [string, string, string] = [
-                                        paletteColors[0],
-                                        paletteColors[1],
-                                        paletteColors[2],
+                                      const next: [number, number, number] = [
+                                        paletteC[0],
+                                        paletteC[1],
+                                        paletteC[2],
                                       ];
-                                      colors[i] = e.target.value;
-                                      setColor(tile.id, { mode: 'palette', colors });
+                                      next[i] = Number(e.target.value);
+                                      setColor(tile.id, {
+                                        mode: 'palette',
+                                        colors: paletteColors,
+                                        c: next,
+                                      });
                                     }}
                                   />
+                                  <span className="mono muted" style={{ width: '3rem' }}>
+                                    {paletteC[i]!.toFixed(2)}
+                                  </span>
                                 </div>
-                              );
-                            })}
-                            <p className="muted" style={{ fontSize: '0.8rem', margin: 0 }}>
-                              Quilez palette(t, a, b, 1, d) · c fixed to (1,1,1)
-                            </p>
+                              ))}
+                            </div>
                           </div>
                         );
                       })()

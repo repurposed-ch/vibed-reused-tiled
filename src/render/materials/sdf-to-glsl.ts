@@ -118,6 +118,7 @@ uniform int uColorMode; // 0 = brightness, 1 = palette
 uniform vec3 uColor;    // brightness base / unused in palette
 uniform vec3 uPalA;
 uniform vec3 uPalB;
+uniform vec3 uPalC;
 uniform vec3 uPalD;
 uniform int uEdged;     // 0 = continuous, 1 = edged
 uniform float uEdgeSeedS;
@@ -174,7 +175,7 @@ void main() {
   float s = uEdged == 1 ? shadeEdged(uv) : shadeContinuous(uv);
   vec3 rgb;
   if (uColorMode == 1) {
-    rgb = iqPalette(s, uPalA, uPalB, vec3(1.0), uPalD);
+    rgb = iqPalette(s, uPalA, uPalB, uPalC, uPalD);
   } else {
     rgb = mix(uColor * 0.55, uColor * 1.18, s);
   }

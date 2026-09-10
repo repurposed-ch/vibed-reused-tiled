@@ -10,6 +10,8 @@ export const RhythmSideJsonSchema = z.object({
 
 export type RhythmSideJson = z.infer<typeof RhythmSideJsonSchema>;
 
+export const DEFAULT_PALETTE_C: [number, number, number] = [1, 1, 1];
+
 export const TileColorJsonSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('brightness'),
@@ -17,7 +19,10 @@ export const TileColorJsonSchema = z.discriminatedUnion('mode', [
   }),
   z.object({
     mode: z.literal('palette'),
+    /** Quilez a, b, d as hex */
     colors: z.tuple([z.string().min(1), z.string().min(1), z.string().min(1)]),
+    /** Quilez c (frequency) — editable floats, typically ~0..2 */
+    c: z.tuple([z.number(), z.number(), z.number()]).default(DEFAULT_PALETTE_C),
   }),
 ]);
 
@@ -52,7 +57,7 @@ export const TileDefinitionJsonSchema = z.object({
   thickness: z.number().positive(),
   /** References `TilingProjectJson.materials[].id`. */
   materialId: z.string().min(1),
-  /** Brightness (1 hex) or Quilez palette (3 hex). */
+  /** Brightness (1 hex) or Quilez palette (3 hex + c floats). */
   color: TileColorJsonSchema,
   /** Optional cached bake (data URL); filled on save / explicit bake. */
   texture: z.string().min(1).optional(),
