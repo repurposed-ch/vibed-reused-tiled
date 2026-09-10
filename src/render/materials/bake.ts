@@ -1,12 +1,27 @@
 import type { MaterialDefinitionJson } from '@/domain/material';
+import {
+  hasCompleteRhythm,
+  type RhythmSideJson,
+  type TileColorJson,
+  type TileDefinitionJson,
+} from '@/domain/tile';
 import { buildBakeFragmentShader, FULLSCREEN_VERT_GLSL } from './sdf-to-glsl';
 
 export const TEXTURE_SIZE = 1024;
+
+export type BakeTileInput = {
+  material: MaterialDefinitionJson;
+  color: TileColorJson;
+  length: number;
+  width: number;
+  rhythm?: TileDefinitionJson['rhythm'];
+};
 
 export type BakeResult = {
   canvas: HTMLCanvasElement;
   dataUrl: string;
   imageData: ImageData;
+  edged: boolean;
 };
 
 type BakeGl = {
@@ -18,11 +33,20 @@ type BakeGl = {
 
 let shared: BakeGl | null = null;
 
-function parseHex(hex: string): [number, number, number] {
+export function parseHexRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return [196 / 255, 165 / 255, 116 / 255];
   const n = parseInt(m[1]!, 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+export function hashEdgeName(name: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i += 1) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 function createDrawingCanvas(size: number): OffscreenCanvas | HTMLCanvasElement {
@@ -140,14 +164,20 @@ export function seamError(imageData: ImageData): number {
   return max;
 }
 
+function edgeUniforms(side: RhythmSideJson | undefined): { seed: number; mirror: number } {
+  if (!side) return { seed: 1, mirror: 0 };
+  return {
+    seed: hashEdgeName(side.name),
+    mirror: side.mirrored ? 1 : 0,
+  };
+}
+
 /**
- * Bake a seamless albedo via GLSL on a WebGL2 OffscreenCanvas (or hidden canvas fallback).
+ * Bake a tile albedo via GLSL on a WebGL2 OffscreenCanvas (or hidden canvas fallback).
  */
-export function bakeMaterialTexture(
-  material: MaterialDefinitionJson,
-  colorHex: string,
-  size = TEXTURE_SIZE,
-): BakeResult {
+export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): BakeResult {
+  const { material, color, length, width, rhythm } = input;
+  const edged = hasCompleteRhythm(rhythm);
   const ctx = getBakeGl(size);
   const { gl, vao } = ctx;
   const fragSrc = buildBakeFragmentShader(material.sdf);
@@ -157,23 +187,50 @@ export function bakeMaterialTexture(
   gl.viewport(0, 0, size, size);
   gl.useProgram(program);
 
-  const uResolution = gl.getUniformLocation(program, 'uResolution');
-  const uSeed = gl.getUniformLocation(program, 'uSeed');
-  const uPeriod = gl.getUniformLocation(program, 'uPeriod');
-  const uColor = gl.getUniformLocation(program, 'uColor');
-  const [r, g, b] = parseHex(colorHex);
+  const period = Math.max(length, width, 1e-6);
+  const s = edgeUniforms(rhythm?.south);
+  const n = edgeUniforms(rhythm?.north);
+  const e = edgeUniforms(rhythm?.east);
+  const w = edgeUniforms(rhythm?.west);
 
-  gl.uniform2f(uResolution, size, size);
-  gl.uniform1f(uSeed, material.seed);
-  gl.uniform1f(uPeriod, material.periodMeters);
-  gl.uniform3f(uColor, r, g, b);
+  gl.uniform2f(gl.getUniformLocation(program, 'uResolution'), size, size);
+  gl.uniform2f(gl.getUniformLocation(program, 'uTileSize'), length, width);
+  gl.uniform1f(gl.getUniformLocation(program, 'uSeed'), material.seed);
+  gl.uniform1f(gl.getUniformLocation(program, 'uPeriod'), period);
+  gl.uniform1i(gl.getUniformLocation(program, 'uEdged'), edged ? 1 : 0);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedS'), s.seed);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedN'), n.seed);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedE'), e.seed);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedW'), w.seed);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorS'), s.mirror);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorN'), n.mirror);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorE'), e.mirror);
+  gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorW'), w.mirror);
+
+  if (color.mode === 'palette') {
+    const [a, b, d] = color.colors;
+    const pa = parseHexRgb(a);
+    const pb = parseHexRgb(b);
+    const pd = parseHexRgb(d);
+    gl.uniform1i(gl.getUniformLocation(program, 'uColorMode'), 1);
+    gl.uniform3f(gl.getUniformLocation(program, 'uColor'), 0, 0, 0);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalA'), pa[0], pa[1], pa[2]);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalB'), pb[0], pb[1], pb[2]);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalD'), pd[0], pd[1], pd[2]);
+  } else {
+    const [r, g, bl] = parseHexRgb(color.color);
+    gl.uniform1i(gl.getUniformLocation(program, 'uColorMode'), 0);
+    gl.uniform3f(gl.getUniformLocation(program, 'uColor'), r, g, bl);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalA'), 0, 0, 0);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalB'), 0, 0, 0);
+    gl.uniform3f(gl.getUniformLocation(program, 'uPalD'), 0, 0, 0);
+  }
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   const pixels = new Uint8Array(size * size * 4);
   gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 
-  // WebGL origin is bottom-left; flip to top-left for canvas / Three.js.
   const imageData = new ImageData(size, size);
   for (let y = 0; y < size; y += 1) {
     const srcRow = (size - 1 - y) * size * 4;
@@ -190,6 +247,7 @@ export function bakeMaterialTexture(
     canvas,
     dataUrl: canvas.toDataURL('image/png'),
     imageData,
+    edged,
   };
 }
 

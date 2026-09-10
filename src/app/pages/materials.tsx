@@ -1,6 +1,7 @@
 import {
   createMaterialDefinition,
   MaterialDefinitionJsonSchema,
+  tileDisplayColor,
   type MaterialDefinitionJson,
 } from '@/domain/project';
 import { assistMaterial } from '@/llm/assist';
@@ -12,21 +13,29 @@ import { useProject } from '../project-context';
 
 function MaterialPreview({
   material,
-  color,
+  colorHex,
 }: {
   material: MaterialDefinitionJson;
-  color: string;
+  colorHex: string;
 }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
     try {
-      const baked = bakeMaterialTexture(material, color, 128);
-      setUrl(baked.dataUrl ?? null);
+      const baked = bakeMaterialTexture(
+        {
+          material,
+          color: { mode: 'brightness', color: colorHex },
+          length: 0.3,
+          width: 0.3,
+        },
+        128,
+      );
+      setUrl(baked.dataUrl);
     } catch {
       setUrl(null);
     }
-  }, [material, color]);
+  }, [material, colorHex]);
 
   if (!url) {
     return (
@@ -34,7 +43,7 @@ function MaterialPreview({
         style={{
           width: 128,
           height: 128,
-          background: color,
+          background: colorHex,
           border: '1px solid #3a322c',
         }}
       />
@@ -83,8 +92,8 @@ export function MaterialsPage() {
     Boolean(llmSettings.provider) &&
     (!providerRequiresApiKey(provider) || Boolean(llmSettings.apiKey.trim()));
 
-  const previewColor =
-    project.tileDefinitions.find((t) => t.materialId === selected?.id)?.color ?? '#c4a574';
+  const linked = project.tileDefinitions.find((t) => t.materialId === selected?.id);
+  const previewColor = linked ? tileDisplayColor(linked.color) : '#c4a574';
 
   const updateMaterial = (id: string, patch: Partial<MaterialDefinitionJson>) => {
     updateProject((p) => ({
@@ -112,8 +121,8 @@ export function MaterialsPage() {
     <div className="page">
       <h1>Materials</h1>
       <p className="lede">
-        Procedural SDF recipes baked to seamless 1024×1024 textures for 3D / GLB / USDZ. Edit
-        manually or ask an LLM. Tiles pick a material and color swatches separately.
+        SDF-only recipes (plus a noise seed). Color and edge UV live on tiles. Bake uses GLSL on
+        an OffscreenCanvas for 3D / GLB / USDZ.
       </p>
 
       <div className="row no-print" style={{ marginBottom: '1rem', gap: '0.5rem' }}>
@@ -145,7 +154,7 @@ export function MaterialsPage() {
             >
               {m.name}
               <span className="muted mono" style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
-                {m.periodMeters}m · seed {m.seed}
+                seed {m.seed}
               </span>
             </button>
           ))}
@@ -154,7 +163,7 @@ export function MaterialsPage() {
         {selected && (
           <section className="panel stack">
             <div className="row" style={{ alignItems: 'flex-start', gap: '1rem' }}>
-              <MaterialPreview material={selected} color={previewColor} />
+              <MaterialPreview material={selected} colorHex={previewColor} />
               <div className="stack" style={{ flex: 1 }}>
                 <div className="field">
                   <label>Name</label>
@@ -163,31 +172,15 @@ export function MaterialsPage() {
                     onChange={(e) => updateMaterial(selected.id, { name: e.target.value })}
                   />
                 </div>
-                <div className="row">
-                  <div className="field">
-                    <label>Seed</label>
-                    <input
-                      type="number"
-                      value={selected.seed}
-                      onChange={(e) =>
-                        updateMaterial(selected.id, { seed: Number(e.target.value) || 0 })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Period (m)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.05"
-                      value={selected.periodMeters}
-                      onChange={(e) =>
-                        updateMaterial(selected.id, {
-                          periodMeters: Math.max(0.05, Number(e.target.value) || 0.05),
-                        })
-                      }
-                    />
-                  </div>
+                <div className="field">
+                  <label>Seed</label>
+                  <input
+                    type="number"
+                    value={selected.seed}
+                    onChange={(e) =>
+                      updateMaterial(selected.id, { seed: Number(e.target.value) || 0 })
+                    }
+                  />
                 </div>
               </div>
             </div>
@@ -266,7 +259,6 @@ export function MaterialsPage() {
                         updateMaterial(selected.id, {
                           name: next.name,
                           seed: next.seed,
-                          periodMeters: next.periodMeters,
                           sdf: next.sdf,
                         });
                       } catch (err) {

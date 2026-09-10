@@ -154,9 +154,8 @@ export const MaterialDefinitionJsonSchema = z.object({
   type: z.literal('MaterialDefinition'),
   id: z.string().min(1),
   name: z.string().min(1),
+  /** Noise / procedural seed (SDF state, not appearance). */
   seed: z.number(),
-  /** World-space repeat size in meters (UV period). */
-  periodMeters: z.number().positive(),
   sdf: SdfNodeJsonSchema,
 });
 
@@ -170,7 +169,6 @@ export function createMaterialDefinition(
     id: partial?.id ?? crypto.randomUUID(),
     name: partial?.name ?? 'Material',
     seed: partial?.seed ?? 1,
-    periodMeters: partial?.periodMeters ?? 0.3,
     sdf: partial?.sdf ?? { op: 'noise', scale: 4, octaves: 3 },
   };
 }

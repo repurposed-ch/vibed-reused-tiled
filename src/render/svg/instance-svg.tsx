@@ -1,7 +1,7 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
 import type { DesignInstanceJson } from '@/domain/instance';
 import { mat3ToSvgMatrix } from '@/domain/mat3';
-import type { TileDefinitionJson } from '@/domain/tile';
+import { tileDisplayColor, type TileDefinitionJson } from '@/domain/tile';
 import { BoundaryPaths } from './boundary-svg';
 
 export function InstanceSvg({
@@ -49,7 +49,7 @@ export function InstanceSvg({
               y={0}
               width={t.length}
               height={t.width}
-              fill={t.color}
+              fill={tileDisplayColor(t.color)}
               stroke="#1a1714"
               strokeWidth={0.008}
             />

@@ -120,4 +120,8 @@ float brickShade(vec2 p, float brickW, float brickH, float mortar, float offsetA
   bool inMortar = mx < mortar || my < mortar;
   return inMortar ? 0.15 : 0.85;
 }
+
+vec3 iqPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(6.28318530718 * (c * t + d));
+}
 `;

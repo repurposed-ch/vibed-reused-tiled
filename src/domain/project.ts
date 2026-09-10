@@ -10,11 +10,15 @@ import { MaterialDefinitionJsonSchema, createMaterialDefinition } from './materi
 import { defaultMaterials, materialIdForLabel } from './material-presets';
 import { translationMat3 } from './mat3';
 import { StockStateJsonSchema } from './stock';
-import { createTileDefinition, TileDefinitionJsonSchema } from './tile';
+import {
+  createTileDefinition,
+  TileDefinitionJsonSchema,
+  type TileColorJson,
+} from './tile';
 
 export const TilingProjectJsonSchema = z.object({
   type: z.literal('TilingProject'),
-  schemaVersion: z.literal(2),
+  schemaVersion: z.literal(3),
   meta: z
     .object({
       name: z.string().optional(),
@@ -31,6 +35,15 @@ export const TilingProjectJsonSchema = z.object({
 
 export type TilingProjectJson = z.infer<typeof TilingProjectJsonSchema>;
 
+type LegacyMaterial = {
+  type?: string;
+  id?: string;
+  name?: string;
+  seed?: number;
+  periodMeters?: number;
+  sdf?: unknown;
+};
+
 type LegacyTile = {
   type?: string;
   id?: string;
@@ -40,58 +53,135 @@ type LegacyTile = {
   thickness?: number;
   material?: string;
   materialId?: string;
-  color?: string;
+  color?: unknown;
   colors?: string[];
   texture?: string;
   rhythm?: unknown;
 };
+
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function migrateTileColor(t: LegacyTile): TileColorJson {
+  const c = t.color;
+  if (c && typeof c === 'object' && c !== null && 'mode' in c) {
+    const obj = c as Record<string, unknown>;
+    if (obj.mode === 'brightness' && typeof obj.color === 'string') {
+      return { mode: 'brightness', color: obj.color };
+    }
+    if (obj.mode === 'palette' && Array.isArray(obj.colors)) {
+      const cols = obj.colors.filter((x): x is string => typeof x === 'string');
+      if (cols.length >= 3) {
+        return { mode: 'palette', colors: [cols[0]!, cols[1]!, cols[2]!] };
+      }
+    }
+  }
+
+  const hex =
+    typeof c === 'string' && c
+      ? c
+      : Array.isArray(t.colors) && t.colors[0]
+        ? t.colors[0]
+        : '#c4a574';
+
+  if (Array.isArray(t.colors) && t.colors.length >= 3) {
+    return {
+      mode: 'palette',
+      colors: [t.colors[0]!, t.colors[1]!, t.colors[2]!],
+    };
+  }
+
+  return { mode: 'brightness', color: hex };
+}
+
+function migrateMaterials(root: Record<string, unknown>): unknown[] {
+  const presets = defaultMaterials();
+  if (!Array.isArray(root.materials)) {
+    return presets;
+  }
+
+  return (root.materials as LegacyMaterial[]).map((m) => {
+    if (m && typeof m === 'object' && m.sdf && typeof m.id === 'string') {
+      return {
+        type: 'MaterialDefinition',
+        id: m.id,
+        name: typeof m.name === 'string' ? m.name : 'Material',
+        seed: typeof m.seed === 'number' ? m.seed : 1,
+        sdf: m.sdf,
+      };
+    }
+    return createMaterialDefinition({
+      id: typeof m.id === 'string' ? m.id : undefined,
+      name: typeof m.name === 'string' ? m.name : 'Material',
+      seed: typeof m.seed === 'number' ? m.seed : 1,
+    });
+  });
+}
 
 function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data;
   const root = data as Record<string, unknown>;
   const version = root.schemaVersion;
 
-  if (version === 2 && Array.isArray(root.materials)) {
-    return root;
+  if (version === 3 && Array.isArray(root.materials)) {
+    // Strip deprecated periodMeters if present on materials
+    return {
+      ...root,
+      materials: migrateMaterials(root),
+      tileDefinitions: Array.isArray(root.tileDefinitions)
+        ? (root.tileDefinitions as LegacyTile[]).map((t) => ({
+            ...t,
+            color: migrateTileColor(t),
+            colors: undefined,
+          }))
+        : root.tileDefinitions,
+    };
   }
 
+  // v1 / v2 → v3
   const presets = defaultMaterials();
   const legacyTiles = Array.isArray(root.tileDefinitions)
     ? (root.tileDefinitions as LegacyTile[])
     : [];
 
-  const extraLabels = new Set<string>();
-  for (const t of legacyTiles) {
-    if (typeof t.material === 'string' && t.material.trim()) {
-      const label = t.material.trim().toLowerCase();
-      if (!presets.some((m) => m.name.toLowerCase() === label)) {
-        extraLabels.add(t.material.trim());
+  let materials: unknown[];
+  if (Array.isArray(root.materials) && root.materials.length > 0) {
+    materials = migrateMaterials(root);
+  } else {
+    const extraLabels = new Set<string>();
+    for (const t of legacyTiles) {
+      if (typeof t.material === 'string' && t.material.trim()) {
+        const label = t.material.trim().toLowerCase();
+        if (!presets.some((m) => m.name.toLowerCase() === label)) {
+          extraLabels.add(t.material.trim());
+        }
       }
     }
+    materials = [
+      ...presets,
+      ...[...extraLabels].map((name) =>
+        createMaterialDefinition({
+          name,
+          seed: hashString(name),
+          sdf: { op: 'noise', scale: 5, octaves: 3 },
+        }),
+      ),
+    ];
   }
 
-  const materials = [
-    ...presets,
-    ...[...extraLabels].map((name) =>
-      createMaterialDefinition({
-        name,
-        seed: hashString(name),
-        periodMeters: 0.3,
-        sdf: { op: 'noise', scale: 5, octaves: 3 },
-      }),
-    ),
-  ];
+  const materialList = materials as ReturnType<typeof defaultMaterials>;
 
   const tileDefinitions = legacyTiles.map((t) => {
-    const color = typeof t.color === 'string' && t.color ? t.color : '#c4a574';
-    const colors =
-      Array.isArray(t.colors) && t.colors.length > 0
-        ? t.colors.filter((c): c is string => typeof c === 'string' && c.length > 0)
-        : [color];
     const materialId =
       typeof t.materialId === 'string' && t.materialId
         ? t.materialId
-        : materialIdForLabel(typeof t.material === 'string' ? t.material : 'ceramic', materials);
+        : materialIdForLabel(typeof t.material === 'string' ? t.material : 'ceramic', materialList);
 
     return {
       type: 'TileDefinition',
@@ -101,8 +191,7 @@ function migrateProject(data: unknown): unknown {
       width: typeof t.width === 'number' && t.width > 0 ? t.width : 0.3,
       thickness: typeof t.thickness === 'number' && t.thickness > 0 ? t.thickness : 0.02,
       materialId,
-      colors,
-      color: colors.includes(color) ? color : colors[0],
+      color: migrateTileColor(t),
       texture: typeof t.texture === 'string' ? t.texture : undefined,
       rhythm: t.rhythm,
     };
@@ -111,19 +200,10 @@ function migrateProject(data: unknown): unknown {
   return {
     ...root,
     type: 'TilingProject',
-    schemaVersion: 2,
+    schemaVersion: 3,
     materials,
     tileDefinitions,
   };
-}
-
-function hashString(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i += 1) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
 }
 
 export function parseTilingProject(data: unknown): TilingProjectJson {
@@ -141,8 +221,10 @@ export function createDefaultProject(): TilingProjectJson {
     width: 0.3,
     thickness: 0.02,
     materialId: terracotta.id,
-    colors: ['#b86b3c', '#c47a4a', '#9a5528'],
-    color: '#b86b3c',
+    color: {
+      mode: 'palette',
+      colors: ['#b86b3c', '#c47a4a', '#9a5528'],
+    },
     rhythm: {
       south: { name: 'A', mirrored: false },
       north: { name: 'A', mirrored: true },
@@ -156,8 +238,7 @@ export function createDefaultProject(): TilingProjectJson {
     width: 0.4,
     thickness: 0.025,
     materialId: stone.id,
-    colors: ['#8a8f7a', '#6f7464', '#a3a890'],
-    color: '#8a8f7a',
+    color: { mode: 'brightness', color: '#8a8f7a' },
     rhythm: {
       south: { name: 'C', mirrored: false },
       north: { name: 'C', mirrored: true },
@@ -168,7 +249,7 @@ export function createDefaultProject(): TilingProjectJson {
 
   return {
     type: 'TilingProject',
-    schemaVersion: 2,
+    schemaVersion: 3,
     meta: {
       name: 'Untitled tiling',
       updatedAt: new Date().toISOString(),

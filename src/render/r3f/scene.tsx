@@ -1,7 +1,11 @@
 import type { DesignInstanceJson } from '@/domain/instance';
 import type { MaterialDefinitionJson } from '@/domain/material';
 import type { TileDefinitionJson } from '@/domain/tile';
-import { getBakedTexture, setTextureRepeat } from '@/render/materials';
+import {
+  bakeInputFromTile,
+  getBakedTexture,
+  setTextureRepeatForTile,
+} from '@/render/materials';
 import { OrbitControls } from '@react-three/drei';
 import { type RefObject, useLayoutEffect, useMemo, useRef } from 'react';
 import {
@@ -47,10 +51,7 @@ export function Scene3d({
             return (
               <TileMesh
                 key={pl.id}
-                length={t.length}
-                width={t.width}
-                thickness={t.thickness}
-                color={t.color}
+                tile={t}
                 material={mat}
                 elements={pl.mat3.elements}
               />
@@ -64,30 +65,25 @@ export function Scene3d({
 }
 
 function TileMesh({
-  length,
-  width,
-  thickness,
-  color,
+  tile,
   material,
   elements,
 }: {
-  length: number;
-  width: number;
-  thickness: number;
-  color: string;
+  tile: TileDefinitionJson;
   material?: MaterialDefinitionJson;
   elements: readonly [number, number, number, number, number, number, number, number, number];
 }) {
   const ref = useRef<Mesh>(null);
+  const { length, width, thickness } = tile;
 
   const map = useMemo(() => {
     if (!material) return null;
-    const { texture } = getBakedTexture(material, color);
+    const { texture } = getBakedTexture(bakeInputFromTile(tile, material));
     const cloned = texture.clone();
     cloned.needsUpdate = true;
-    setTextureRepeat(cloned, length, width, material.periodMeters);
+    setTextureRepeatForTile(cloned, tile);
     return cloned;
-  }, [material, color, length, width]);
+  }, [material, tile]);
 
   useLayoutEffect(() => {
     return () => {

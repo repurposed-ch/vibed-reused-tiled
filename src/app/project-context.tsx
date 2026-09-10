@@ -7,7 +7,7 @@ import {
   type DesignInstanceJson,
   type TilingProjectJson,
 } from '@/domain/project';
-import { getBakedDataUrl } from '@/render/materials';
+import { bakeInputFromTile, getBakedDataUrl } from '@/render/materials';
 import {
   DEFAULT_LLM_PROVIDER_ID,
   getProvider,
@@ -123,7 +123,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         const material = materialMap.get(tile.materialId);
         if (!material) return tile;
         try {
-          const texture = getBakedDataUrl(material, tile.color);
+          const texture = getBakedDataUrl(bakeInputFromTile(tile, material));
           return { ...tile, texture };
         } catch {
           return tile;

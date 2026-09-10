@@ -4,19 +4,21 @@ import {
   parseTilingProject,
   projectFromJsonString,
   projectToJsonString,
+  TileDefinitionJsonSchema,
 } from '@/domain/project';
-import { compileSdfExpression, buildBakeFragmentShader } from '@/render/materials/sdf-to-glsl';
+import { buildBakeFragmentShader, compileSdfExpression } from '@/render/materials/sdf-to-glsl';
 import { mulberry32, sampleStock } from '@/workflow/sample-stock';
 import { solveLayout } from '@/workflow/solve-layout';
 
 describe('project schema', () => {
-  it('round-trips the default project at schemaVersion 2', () => {
+  it('round-trips the default project at schemaVersion 3', () => {
     const project = createDefaultProject();
     const again = parseTilingProject(JSON.parse(JSON.stringify(project)) as unknown);
-    expect(again.schemaVersion).toBe(2);
+    expect(again.schemaVersion).toBe(3);
     expect(again.materials.length).toBeGreaterThan(0);
+    expect(again.materials[0]).not.toHaveProperty('periodMeters');
     expect(again.tileDefinitions[0]?.materialId).toBeTruthy();
-    expect(again.tileDefinitions[0]?.colors.length).toBeGreaterThan(0);
+    expect(again.tileDefinitions[0]?.color.mode).toMatch(/brightness|palette/);
   });
 
   it('migrates legacy v1 projects with freeform material strings', () => {
@@ -69,10 +71,65 @@ describe('project schema', () => {
       },
     };
     const migrated = parseTilingProject(legacy);
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(3);
     expect(migrated.materials.some((m) => m.name === 'terracotta')).toBe(true);
-    expect(migrated.tileDefinitions[0]?.colors).toEqual(['#b86b3c']);
-    expect(migrated.tileDefinitions[0]?.materialId).toBeTruthy();
+    expect(migrated.tileDefinitions[0]?.color).toEqual({
+      mode: 'brightness',
+      color: '#b86b3c',
+    });
+  });
+
+  it('migrates v2 colors[] into TileColorJson', () => {
+    const v2 = {
+      ...createDefaultProject(),
+      schemaVersion: 2,
+      materials: [
+        {
+          type: 'MaterialDefinition',
+          id: 'm1',
+          name: 'stone',
+          seed: 1,
+          periodMeters: 0.3,
+          sdf: { op: 'noise', scale: 4 },
+        },
+      ],
+      tileDefinitions: [
+        {
+          type: 'TileDefinition',
+          id: 't1',
+          name: 'T',
+          length: 0.4,
+          width: 0.4,
+          thickness: 0.02,
+          materialId: 'm1',
+          colors: ['#111111', '#222222', '#333333'],
+          color: '#111111',
+        },
+      ],
+    };
+    const migrated = parseTilingProject(v2);
+    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.materials[0]).not.toHaveProperty('periodMeters');
+    expect(migrated.tileDefinitions[0]?.color).toEqual({
+      mode: 'palette',
+      colors: ['#111111', '#222222', '#333333'],
+    });
+  });
+
+  it('rejects partial rhythm on tiles', () => {
+    expect(() =>
+      TileDefinitionJsonSchema.parse({
+        type: 'TileDefinition',
+        id: 't',
+        name: 'T',
+        length: 0.3,
+        width: 0.3,
+        thickness: 0.02,
+        materialId: 'm',
+        color: { mode: 'brightness', color: '#fff' },
+        rhythm: { south: { name: 'A', mirrored: false } },
+      }),
+    ).toThrow();
   });
 
   it('serializes materials in project JSON', () => {
@@ -86,7 +143,7 @@ describe('project schema', () => {
 });
 
 describe('sdf → glsl', () => {
-  it('compiles noise and mix nodes into fragment source', () => {
+  it('compiles noise/mix and includes Quilez palette in bake shader', () => {
     const sdf = {
       op: 'mix' as const,
       t: 0.5,
@@ -96,10 +153,12 @@ describe('sdf → glsl', () => {
     const expr = compileSdfExpression(sdf);
     expect(expr).toContain('fbm2');
     expect(expr).toContain('voronoiEdge');
+    expect(expr).toContain('seed');
     const frag = buildBakeFragmentShader(sdf);
     expect(frag).toContain('#version 300 es');
-    expect(frag).toContain('float shadeRaw');
-    expect(frag).toContain('uPeriod');
+    expect(frag).toContain('iqPalette');
+    expect(frag).toContain('shadeEdged');
+    expect(frag).toContain('uColorMode');
   });
 });
 

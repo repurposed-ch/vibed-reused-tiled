@@ -42,21 +42,18 @@ export function defaultMaterials(): MaterialDefinitionJson[] {
       id: 'material-terracotta',
       name: 'terracotta',
       seed: 11,
-      periodMeters: 0.3,
       sdf: terracottaSdf,
     }),
     createMaterialDefinition({
       id: 'material-stone',
       name: 'stone',
       seed: 42,
-      periodMeters: 0.4,
       sdf: stoneSdf,
     }),
     createMaterialDefinition({
       id: 'material-ceramic',
       name: 'ceramic',
       seed: 7,
-      periodMeters: 0.3,
       sdf: ceramicSdf,
     }),
   ];

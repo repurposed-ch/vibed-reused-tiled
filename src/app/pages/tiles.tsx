@@ -1,10 +1,13 @@
 import {
   createTileDefinition,
+  hasCompleteRhythm,
+  tileDisplayColor,
   type FacadeSide,
   type MaterialDefinitionJson,
+  type TileColorJson,
   type TileDefinitionJson,
 } from '@/domain/project';
-import { bakeMaterialTexture } from '@/render/materials';
+import { bakeInputFromTile, bakeMaterialTexture } from '@/render/materials';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProject } from '../project-context';
@@ -16,6 +19,14 @@ const MAX_PREVIEW_H = 100;
 
 function formatMeters(n: number): string {
   return Number.isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : '—';
+}
+
+function rhythmStatus(rhythm: TileDefinitionJson['rhythm']): 'none' | 'complete' | 'partial' {
+  if (!rhythm) return 'none';
+  const n = SIDES.filter((s) => rhythm[s] != null).length;
+  if (n === 0) return 'none';
+  if (n === 4) return 'complete';
+  return 'partial';
 }
 
 function TilePreview({
@@ -35,6 +46,7 @@ function TilePreview({
   const vbH = h + pad * 2;
   const dims = `${formatMeters(tile.length)}×${formatMeters(tile.width)}×${formatMeters(tile.thickness)} m`;
   const patternId = `tile-tex-${tile.id}`;
+  const fallback = tileDisplayColor(tile.color);
 
   const [textureUrl, setTextureUrl] = useState<string | null>(null);
 
@@ -44,13 +56,12 @@ function TilePreview({
       return;
     }
     try {
-      // Smaller bake for UI preview; full 1024 used in 3D / export.
-      const baked = bakeMaterialTexture(material, tile.color, 256);
+      const baked = bakeMaterialTexture(bakeInputFromTile(tile, material), 256);
       setTextureUrl(baked.dataUrl);
     } catch {
       setTextureUrl(null);
     }
-  }, [material, tile.color]);
+  }, [material, tile]);
 
   return (
     <div style={{ display: 'grid', placeItems: 'center', gap: '0.35rem' }}>
@@ -88,7 +99,7 @@ function TilePreview({
           y={pad}
           width={w}
           height={h}
-          fill={textureUrl ? `url(#${patternId})` : tile.color}
+          fill={textureUrl ? `url(#${patternId})` : fallback}
           stroke="#f3ebe1"
           strokeWidth={1.5}
         />
@@ -122,6 +133,7 @@ function TilePreview({
       </svg>
       <p className="muted mono" style={{ margin: 0, fontSize: '0.8rem' }}>
         {dims}
+        {hasCompleteRhythm(tile.rhythm) ? ' · edged UV' : ' · continuous UV'}
       </p>
     </div>
   );
@@ -133,18 +145,12 @@ export function TilesPage() {
   const updateTile = (id: string, patch: Partial<TileDefinitionJson>) => {
     updateProject((p) => ({
       ...p,
-      tileDefinitions: p.tileDefinitions.map((t) => {
-        if (t.id !== id) return t;
-        const next = { ...t, ...patch };
-        if (patch.color && !next.colors.includes(patch.color)) {
-          next.colors = [...next.colors, patch.color];
-        }
-        if (patch.colors && !patch.colors.includes(next.color)) {
-          next.color = patch.colors[0] ?? next.color;
-        }
-        return next;
-      }),
+      tileDefinitions: p.tileDefinitions.map((t) => (t.id === id ? { ...t, ...patch } : t)),
     }));
+  };
+
+  const setColor = (id: string, color: TileColorJson) => {
+    updateTile(id, { color });
   };
 
   const setRhythm = (
@@ -157,16 +163,40 @@ export function TilesPage() {
       ...p,
       tileDefinitions: p.tileDefinitions.map((t) => {
         if (t.id !== id) return t;
-        const current = t.rhythm?.[side] ?? { name: 'A', mirrored: false };
-        return {
-          ...t,
-          rhythm: {
-            ...t.rhythm,
-            [side]: { ...current, [field]: value },
-          },
-        };
+        const base =
+          t.rhythm && hasCompleteRhythm(t.rhythm)
+            ? { ...t.rhythm }
+            : {
+                south: { name: 'A', mirrored: false },
+                north: { name: 'A', mirrored: true },
+                east: { name: 'B', mirrored: false },
+                west: { name: 'B', mirrored: true },
+              };
+        const current = base[side];
+        if (field === 'name' && typeof value === 'string') {
+          const name = value.trim() || current.name;
+          base[side] = { ...current, name };
+        } else if (field === 'mirrored' && typeof value === 'boolean') {
+          base[side] = { ...current, mirrored: value };
+        }
+        return { ...t, rhythm: base };
       }),
     }));
+  };
+
+  const enableAllEdges = (id: string) => {
+    updateTile(id, {
+      rhythm: {
+        south: { name: 'A', mirrored: false },
+        north: { name: 'A', mirrored: true },
+        east: { name: 'B', mirrored: false },
+        west: { name: 'B', mirrored: true },
+      },
+    });
+  };
+
+  const clearEdges = (id: string) => {
+    updateTile(id, { rhythm: undefined });
   };
 
   const defaultMaterialId = project.materials[0]?.id ?? 'material-ceramic';
@@ -175,9 +205,9 @@ export function TilesPage() {
     <div className="page">
       <h1>Tile definitions</h1>
       <p className="lede">
-        Rectangles with length (+X), width (+Y), thickness (+Z), a material recipe, color
-        swatches (2D uses the active color), and optional rhythm labels. Edit SDF materials on the{' '}
-        <Link to="/materials">Materials</Link> page.
+        Geometry, SDF material, brightness or palette color, and optional edge rhythm (all four
+        sides or none). Layout 2D uses a flat display color; preview / 3D use the GLSL bake. Edit
+        materials on the <Link to="/materials">Materials</Link> page.
       </p>
 
       <div className="row no-print" style={{ marginBottom: '1rem' }}>
@@ -199,166 +229,230 @@ export function TilesPage() {
       </div>
 
       <div className="stack">
-        {project.tileDefinitions.map((tile) => (
-          <section key={tile.id} className="panel">
-            <div className="split split-2">
-              <div className="stack">
-                <div className="row">
-                  <div className="field" style={{ flex: 1 }}>
-                    <label>Name</label>
-                    <input
-                      value={tile.name}
-                      onChange={(e) => updateTile(tile.id, { name: e.target.value })}
-                    />
-                  </div>
-                  <div className="field">
-                    <label>Material</label>
-                    <select
-                      value={tile.materialId}
-                      onChange={(e) => updateTile(tile.id, { materialId: e.target.value })}
-                    >
-                      {project.materials.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label>Color swatches</label>
-                  <div className="row" style={{ flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
-                    {tile.colors.map((c, i) => (
-                      <button
-                        key={`${c}-${i}`}
-                        type="button"
-                        title={c}
-                        onClick={() => updateTile(tile.id, { color: c })}
-                        style={{
-                          width: 28,
-                          height: 28,
-                          borderRadius: 4,
-                          border:
-                            c === tile.color ? '2px solid #f3ebe1' : '1px solid #5a4f45',
-                          background: c,
-                          cursor: 'pointer',
-                          padding: 0,
-                        }}
-                      />
-                    ))}
-                    <input
-                      type="color"
-                      value={tile.color.startsWith('#') ? tile.color : '#c4a574'}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        updateTile(tile.id, {
-                          color: next,
-                          colors: tile.colors.includes(next)
-                            ? tile.colors
-                            : [...tile.colors, next],
-                        });
-                      }}
-                      title="Add / set active color"
-                    />
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={tile.colors.length <= 1}
-                      onClick={() => {
-                        const next = tile.colors.filter((c) => c !== tile.color);
-                        if (!next.length) return;
-                        updateTile(tile.id, { colors: next, color: next[0]! });
-                      }}
-                    >
-                      Remove active
-                    </button>
-                  </div>
-                  <p className="muted" style={{ margin: '0.35rem 0 0', fontSize: '0.8rem' }}>
-                    Active: <span className="mono">{tile.color}</span> (2D fill + bake tint)
-                  </p>
-                </div>
-
-                <div className="row">
-                  {(['length', 'width', 'thickness'] as const).map((dim) => (
-                    <div className="field" key={dim}>
-                      <label>{dim} (m)</label>
+        {project.tileDefinitions.map((tile) => {
+          const status = rhythmStatus(tile.rhythm);
+          return (
+            <section key={tile.id} className="panel">
+              <div className="split split-2">
+                <div className="stack">
+                  <div className="row">
+                    <div className="field" style={{ flex: 1 }}>
+                      <label>Name</label>
                       <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        value={tile[dim]}
-                        onChange={(e) =>
-                          updateTile(tile.id, { [dim]: Number(e.target.value) || 0.01 })
-                        }
+                        value={tile.name}
+                        onChange={(e) => updateTile(tile.id, { name: e.target.value })}
                       />
                     </div>
-                  ))}
+                    <div className="field">
+                      <label>Material</label>
+                      <select
+                        value={tile.materialId}
+                        onChange={(e) => updateTile(tile.id, { materialId: e.target.value })}
+                      >
+                        {project.materials.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label>Color</label>
+                    <div className="row" style={{ gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className={tile.color.mode === 'brightness' ? 'btn primary' : 'btn'}
+                        onClick={() =>
+                          setColor(tile.id, {
+                            mode: 'brightness',
+                            color: tileDisplayColor(tile.color),
+                          })
+                        }
+                      >
+                        Brightness
+                      </button>
+                      <button
+                        type="button"
+                        className={tile.color.mode === 'palette' ? 'btn primary' : 'btn'}
+                        onClick={() => {
+                          const base = tileDisplayColor(tile.color);
+                          setColor(tile.id, {
+                            mode: 'palette',
+                            colors:
+                              tile.color.mode === 'palette'
+                                ? tile.color.colors
+                                : [base, base, base],
+                          });
+                        }}
+                      >
+                        Palette (3)
+                      </button>
+                    </div>
+                    {tile.color.mode === 'brightness' ? (
+                      <div className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+                        <input
+                          type="color"
+                          value={
+                            tile.color.color.startsWith('#') ? tile.color.color : '#c4a574'
+                          }
+                          onChange={(e) =>
+                            setColor(tile.id, { mode: 'brightness', color: e.target.value })
+                          }
+                        />
+                        <span className="mono muted">{tile.color.color}</span>
+                        <span className="muted" style={{ fontSize: '0.8rem' }}>
+                          SDF → brightness
+                        </span>
+                      </div>
+                    ) : (
+                      (() => {
+                        const paletteColors = tile.color.colors;
+                        return (
+                          <div className="row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+                            {(['a', 'b', 'd'] as const).map((label, i) => {
+                              const hex = paletteColors[i]!;
+                              return (
+                                <div key={label} className="field">
+                                  <label>palette {label}</label>
+                                  <input
+                                    type="color"
+                                    value={hex.startsWith('#') ? hex : '#c4a574'}
+                                    onChange={(e) => {
+                                      const colors: [string, string, string] = [
+                                        paletteColors[0],
+                                        paletteColors[1],
+                                        paletteColors[2],
+                                      ];
+                                      colors[i] = e.target.value;
+                                      setColor(tile.id, { mode: 'palette', colors });
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })}
+                            <p className="muted" style={{ fontSize: '0.8rem', margin: 0 }}>
+                              Quilez palette(t, a, b, 1, d) · c fixed to (1,1,1)
+                            </p>
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+
+                  <div className="row">
+                    {(['length', 'width', 'thickness'] as const).map((dim) => (
+                      <div className="field" key={dim}>
+                        <label>{dim} (m)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={tile[dim]}
+                          onChange={(e) =>
+                            updateTile(tile.id, { [dim]: Number(e.target.value) || 0.01 })
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="field">
+                    <label>Edge rhythm (texture + composition)</label>
+                    <p className="muted" style={{ margin: '0 0 0.5rem', fontSize: '0.8rem' }}>
+                      None → continuous UV. All four sides → edged UV (SDF mirrored/merged per
+                      edge). Partial is invalid.
+                    </p>
+                    <div className="row" style={{ marginBottom: '0.5rem', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => enableAllEdges(tile.id)}
+                      >
+                        Set all four edges
+                      </button>
+                      <button type="button" className="btn" onClick={() => clearEdges(tile.id)}>
+                        Clear edges
+                      </button>
+                    </div>
+                    {status === 'partial' && (
+                      <p className="error">
+                        Incomplete rhythm — set all four sides or clear edges.
+                      </p>
+                    )}
+                    <div className="table-scroll">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Side</th>
+                            <th>Rhythm</th>
+                            <th>Mirrored</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {SIDES.map((side) => (
+                            <tr key={side}>
+                              <td>{side}</td>
+                              <td>
+                                <input
+                                  value={tile.rhythm?.[side]?.name ?? ''}
+                                  placeholder="—"
+                                  onChange={(e) =>
+                                    setRhythm(tile.id, side, 'name', e.target.value)
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={tile.rhythm?.[side]?.mirrored ?? false}
+                                  disabled={!tile.rhythm?.[side]?.name}
+                                  onChange={(e) =>
+                                    setRhythm(tile.id, side, 'mirrored', e.target.checked)
+                                  }
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() =>
+                      updateProject((p) => ({
+                        ...p,
+                        tileDefinitions: p.tileDefinitions.filter((t) => t.id !== tile.id),
+                        stock: {
+                          ...p.stock,
+                          entries: p.stock.entries.filter((e) => e.tileDefinitionId !== tile.id),
+                        },
+                      }))
+                    }
+                  >
+                    Delete tile
+                  </button>
                 </div>
-                <div className="table-scroll">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Side</th>
-                        <th>Rhythm</th>
-                        <th>Mirrored</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {SIDES.map((side) => (
-                        <tr key={side}>
-                          <td>{side}</td>
-                          <td>
-                            <input
-                              value={tile.rhythm?.[side]?.name ?? ''}
-                              placeholder="—"
-                              onChange={(e) => setRhythm(tile.id, side, 'name', e.target.value)}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={tile.rhythm?.[side]?.mirrored ?? false}
-                              disabled={!tile.rhythm?.[side]?.name}
-                              onChange={(e) =>
-                                setRhythm(tile.id, side, 'mirrored', e.target.checked)
-                              }
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <button
-                  type="button"
-                  className="btn danger"
-                  onClick={() =>
-                    updateProject((p) => ({
-                      ...p,
-                      tileDefinitions: p.tileDefinitions.filter((t) => t.id !== tile.id),
-                      stock: {
-                        ...p.stock,
-                        entries: p.stock.entries.filter((e) => e.tileDefinitionId !== tile.id),
-                      },
-                    }))
-                  }
+                <div
+                  className="canvas-frame"
+                  style={{ display: 'grid', placeItems: 'center', gap: '0.75rem' }}
                 >
-                  Delete tile
-                </button>
+                  <TilePreview
+                    tile={tile}
+                    material={project.materials.find((m) => m.id === tile.materialId)}
+                  />
+                  <p className="muted mono" style={{ marginTop: 0 }}>
+                    {tile.id.slice(0, 8)}
+                  </p>
+                </div>
               </div>
-              <div className="canvas-frame" style={{ display: 'grid', placeItems: 'center', gap: '0.75rem' }}>
-                <TilePreview
-                  tile={tile}
-                  material={project.materials.find((m) => m.id === tile.materialId)}
-                />
-                <p className="muted mono" style={{ marginTop: 0 }}>
-                  {tile.id.slice(0, 8)}
-                </p>
-              </div>
-            </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
       </div>
     </div>
   );

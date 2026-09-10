@@ -1,6 +1,6 @@
-import type { DesignModuleJson } from '@/domain/design-family';
 import { mat3ToSvgMatrix } from '@/domain/mat3';
-import type { TileDefinitionJson } from '@/domain/tile';
+import { tileDisplayColor, type TileDefinitionJson } from '@/domain/tile';
+import type { DesignModuleJson } from '@/domain/design-family';
 
 export function ModulePreviewSvg({
   module,
@@ -46,7 +46,7 @@ export function ModulePreviewSvg({
               y={0}
               width={t.length}
               height={t.width}
-              fill={t.color}
+              fill={tileDisplayColor(t.color)}
               stroke="#1a1714"
               strokeWidth={0.01}
             />

@@ -376,10 +376,9 @@ const MATERIAL_SCHEMA_HINT = `{
   "id": "string uuid",
   "name": "short material name e.g. terracotta",
   "seed": 1,
-  "periodMeters": 0.3,
   "sdf": {
     "op": "mix | mul | add | union | subtract | intersect | smoothUnion | translate | rotate | scale | repeat | mirror | circle | box | ring | line | noise | voronoi | brick | band | fill",
-    "...": "recursive SDF / procedural graph; sampling is periodic over periodMeters so the bake is edge-repeating"
+    "...": "recursive SDF / procedural graph only — colors and UV edge modes live on tiles"
   }
 }
 
@@ -418,7 +417,13 @@ function parseMaterialJson(text: string): MaterialDefinitionJson {
   } catch {
     throw new Error('LLM assist failed: model reply was not valid JSON');
   }
-  return MaterialDefinitionJsonSchema.parse(unwrapMaterial(parsed));
+  const raw = unwrapMaterial(parsed);
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = { ...(raw as Record<string, unknown>) };
+    delete obj.periodMeters;
+    return MaterialDefinitionJsonSchema.parse(obj);
+  }
+  return MaterialDefinitionJsonSchema.parse(raw);
 }
 
 function buildMaterialPrompt(request: LlmMaterialAssistRequest): string {
@@ -439,7 +444,7 @@ function buildMaterialPrompt(request: LlmMaterialAssistRequest): string {
   }
   parts.push(
     '',
-    'Rules: the SDF must be seamlessly tileable (periodic over periodMeters); prefer noise/voronoi/brick/mix; invent a new uuid for id unless revising; keep periodMeters between 0.1 and 1.0; seed is an integer.',
+    'Rules: return SDF-only materials (no periodMeters, no colors); prefer noise/voronoi/brick/mix; invent a new uuid for id unless revising; seed is an integer.',
   );
   return parts.join('\n');
 }

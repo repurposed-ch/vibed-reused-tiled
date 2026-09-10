@@ -121,9 +121,9 @@ All domain types are JSON-serializable. Math geometry reuses the existing `type`
 /** Root document — load / upload this file. */
 type TilingProjectJson = {
   type: 'TilingProject';
-  schemaVersion: 2;
+  schemaVersion: 3;
   meta?: { name?: string; updatedAt?: string };
-  /** SDF material recipes (compiled to GLSL and baked at runtime). */
+  /** SDF-only material recipes (compiled to GLSL and baked at runtime). */
   materials: MaterialDefinitionJson[];
   tileDefinitions: TileDefinitionJson[];
   stock: StockStateJson;
@@ -136,7 +136,7 @@ type TilingProjectJson = {
 
 ### 4.1 Materials and tile definition
 
-**Materials** are declarative seamless SDF graphs. At runtime they compile to GLSL and bake to a 1024×1024 edge-repeating albedo (WebGL2 `OffscreenCanvas`). Layout 2D still uses the tile’s active color only; the Tiles authoring preview and 3D / GLB / USDZ use the bake.
+**Materials** are SDF graphs only (`id`, `name`, `seed`, `sdf`). Appearance (color mode, edge UV) lives on tiles. At runtime the SDF compiles to GLSL and bakes to a 1024×1024 albedo (WebGL2 `OffscreenCanvas`).
 
 ```ts
 type MaterialDefinitionJson = {
@@ -144,44 +144,39 @@ type MaterialDefinitionJson = {
   id: string;
   name: string;
   seed: number;
-  /** World-space UV period in meters */
-  periodMeters: number;
   sdf: SdfNodeJson; // tagged union: noise, voronoi, brick, circle, union, mix, …
 };
 ```
 
-Rectangles reference a material, own color swatches, and optional **rhythm** on facade sides.
+**Tile color:** brightness (one hex → SDF as brightness) or Quilez palette (three hex → `a,b,d` with `c = (1,1,1)`). Hex in JSON; shader uses 0–1 RGB.
 
-**Local frame convention:** corner at local origin; **+X = length**, **+Y = width**; thickness is along **+Z** in 3D.
+**Rhythm / edges:** omit rhythm → continuous UV; all four sides required for edged UV (SDF mirrored/merged per edge so matching labels stay continuous). Partial rhythm is invalid.
+
+**Local frame:** corner at origin; **+X = length**, **+Y = width**; thickness along **+Z** in 3D.
 
 ```ts
-type FacadeSide = 'south' | 'east' | 'north' | 'west'; // +Y- / +X+ / +Y+ / +X- in local frame
+type FacadeSide = 'south' | 'east' | 'north' | 'west';
 
 type RhythmSideJson = {
-  /** Shared label across matching edges, e.g. "A" */
   name: string;
-  /** If true, this side is the mirror variant of `name` */
   mirrored: boolean;
 };
+
+type TileColorJson =
+  | { mode: 'brightness'; color: string }
+  | { mode: 'palette'; colors: [string, string, string] };
 
 type TileDefinitionJson = {
   type: 'TileDefinition';
   id: string;
   name: string;
-  /** meters */
   length: number;
   width: number;
   thickness: number;
-  /** References materials[].id */
   materialId: string;
-  /** Color swatches (hex) */
-  colors: string[];
-  /** Active swatch — 2D fill + bake tint */
-  color: string;
-  /** Optional cached bake (data URL); filled on project download */
-  texture?: string;
-  /** Optional; omit sides that have no rhythm role */
-  rhythm?: Partial<Record<FacadeSide, RhythmSideJson>>;
+  color: TileColorJson;
+  texture?: string; // optional cached bake data URL
+  rhythm?: Record<FacadeSide, RhythmSideJson>; // all four or omit
 };
 ```
 
@@ -437,20 +432,20 @@ The client wraps this into a text prompt and asks for DesignFamily JSON only.
 
 - For each `PlacementJson`, apply `mat3` to the tile rectangle `(0,0)–(length,width)`.
 - Emit SVG `<g transform="matrix(a,b,c,d,e,f)">` (map from column-major `Mat3`).
-- Draw fill from active `color` only (no textures in the layout 2D view).
+- Draw fill from display color only (`brightness.color` or palette middle swatch); no textures in layout 2D.
 - Boundaries / guides as underlay.
 - PDF: print stylesheet or SVG→PDF helper from the 2D view.
 - Tile definitions authoring preview uses the baked texture with rhythm labels overlaid.
 
 ### 9.2 3D (R3F) and AR export
 
-- Extrude each tile by `thickness` along local +Z; apply world transform from `mat3` (planar XY) + Z = 0 (or project convention).
-- Albedo from GLSL-baked 1024² seamless texture (`materialId` SDF + active `color` tint); `texture.repeat` = tile size / `periodMeters`.
-- Export runs **entirely in the browser** from the R3F tile export group (no server, no `usd_from_gltf`):
+- Extrude each tile by `thickness` along local +Z; apply world transform from `mat3` (planar XY).
+- Albedo from GLSL bake: SDF + tile color mode (brightness or Quilez palette) + continuous or edged UV (rhythm).
+- Export in-browser from the R3F tile export group:
   - **GLB** via Three.js `GLTFExporter` (embedded baked images)
-  - **USDZ** via Three.js `USDZExporter` (`quickLookCompatible`, horizontal plane anchoring) for Quick Look / `model-viewer` `ios-src`
-- Decorative floor / helpers use `userData.export === false` and are omitted from downloads.
-- Project JSON download embeds optional `tile.texture` data URLs from the bake cache.
+  - **USDZ** via Three.js `USDZExporter` (`quickLookCompatible`, horizontal plane anchoring)
+- Floor / helpers use `userData.export === false`.
+- Project JSON download embeds optional `tile.texture` data URLs.
 
 ---
 
