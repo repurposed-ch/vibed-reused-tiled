@@ -31,17 +31,21 @@ export function InstanceSvg({
 
   const vbW = maxX + 0.4;
   const vbH = maxY + 0.4;
+  // World +Y up (CAD convention): content is flipped into svg y in [-maxY, 0],
+  // so the viewBox starts there rather than at -0.2.
+  const vbY = -maxY - 0.2;
 
   return (
     <svg
       className="fluid-svg"
-      viewBox={`-0.2 -0.2 ${vbW} ${vbH}`}
+      viewBox={`-0.2 ${vbY} ${vbW} ${vbH}`}
       preserveAspectRatio="xMidYMid meet"
       style={{ aspectRatio: `${vbW} / ${vbH}` }}
       xmlns="http://www.w3.org/2000/svg"
       role="img"
       aria-label="Design instance"
     >
+      <g transform="scale(1,-1)">
       <BoundaryPaths boundaries={boundaries} />
       {instance.placements.map((pl) => {
         const t = tileMap.get(pl.tileDefinitionId);
@@ -60,6 +64,7 @@ export function InstanceSvg({
           </g>
         );
       })}
+      </g>
     </svg>
   );
 }

@@ -161,7 +161,14 @@ function scoreCandidate(
  * Solver v1: place primary modules along +X then +Y, then greedy leftover fill on a coarse grid.
  */
 export function solveLayout(input: SolveInput): DesignInstanceJson {
-  if (input.tileSchema) return solveFromTileSchema(input, input.tileSchema);
+  if (input.tileSchema) {
+    const fromSchema = solveFromTileSchema(input, input.tileSchema);
+    // A schema that does not tile throws inside the fill. The editor blocks
+    // saving one, but a project can arrive by upload or from an older session,
+    // and losing the whole Solve page to it is worse than falling back to the
+    // module packer with the reason recorded on the instance.
+    if (fromSchema) return fromSchema;
+  }
 
   const tiles = new Map(input.tileDefinitions.map((t) => [t.id, t]));
   const remaining = new Map(input.sampledStock.map((s) => [s.tileDefinitionId, s.count]));
@@ -284,13 +291,21 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
  * Grid path: the schema already describes the whole tiling, so the boundary is
  * filled directly from it and neither the module walk nor the greedy fill runs.
  */
-function solveFromTileSchema(input: SolveInput, tileSchema: TileSchemaJson): DesignInstanceJson {
-  const result = fillPolygonWithTileSchema({
-    schema: tileSchema,
-    tiles: input.tileDefinitions,
-    boundaries: input.boundaries,
-    sampledStock: input.sampledStock,
-  });
+function solveFromTileSchema(
+  input: SolveInput,
+  tileSchema: TileSchemaJson,
+): DesignInstanceJson | null {
+  let result;
+  try {
+    result = fillPolygonWithTileSchema({
+      schema: tileSchema,
+      tiles: input.tileDefinitions,
+      boundaries: input.boundaries,
+      sampledStock: input.sampledStock,
+    });
+  } catch {
+    return null;
+  }
 
   const shortfallTotal = Object.values(result.stats.shortfall).reduce((a, b) => a + b, 0);
 

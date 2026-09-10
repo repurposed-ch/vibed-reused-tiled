@@ -7,6 +7,7 @@ import { MaterialsPage } from './pages/materials';
 import { StockPage } from './pages/stock';
 import { DesignFamilyPage } from './pages/design-family';
 import { BoundariesPage } from './pages/boundaries';
+import { TileSchemaPage } from './pages/tile-schema';
 import { SolvePage } from './pages/solve';
 import { View2dPage } from './pages/view-2d';
 import { View3dPage } from './pages/view-3d';
@@ -23,7 +24,8 @@ export function App() {
             <Route path="materials" element={<MaterialsPage />} />
             <Route path="stock" element={<StockPage />} />
             <Route path="design-family" element={<DesignFamilyPage />} />
-            <Route path="boundaries" element={<BoundariesPage />} />
+            <Route path="tile-schema" element={<TileSchemaPage />} />
+        <Route path="boundaries" element={<BoundariesPage />} />
             <Route path="solve" element={<SolvePage />} />
             <Route path="view/2d" element={<View2dPage />} />
             <Route path="view/3d" element={<View3dPage />} />

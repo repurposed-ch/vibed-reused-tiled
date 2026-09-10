@@ -26,16 +26,19 @@ export function ModulePreviewSvg({
   const pad = 0.1;
   const vbW = maxX + pad * 2;
   const vbH = maxY + pad * 2;
+  // World +Y up (CAD convention); see instance-svg.
+  const vbY = -maxY - pad;
 
   return (
     <svg
       className="fluid-svg"
-      viewBox={`${-pad} ${-pad} ${vbW} ${vbH}`}
+      viewBox={`${-pad} ${vbY} ${vbW} ${vbH}`}
       preserveAspectRatio="xMidYMid meet"
       style={{ aspectRatio: `${vbW} / ${vbH}` }}
       role="img"
       aria-label="Module preview"
     >
+      <g transform="scale(1,-1)">
       {module.placements.map((pl) => {
         const t = tileMap.get(pl.tileDefinitionId);
         if (!t) return null;
@@ -53,6 +56,7 @@ export function ModulePreviewSvg({
           </g>
         );
       })}
+      </g>
     </svg>
   );
 }

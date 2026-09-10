@@ -16,6 +16,7 @@ import {
   residueClass,
   resolveCell,
   resolveSchema,
+  tryResolveSchema,
   validateLattice,
 } from '@/workflow/tile-grid-lattice';
 
@@ -399,5 +400,41 @@ describe('nested master grids', () => {
     // The inner level alternates, so exactly half the domain is mirrored in x.
     expect(resolved.cells.filter((c) => c.flip.x).length).toBe(16);
     expect(coverWindow(schema, 12).unresolved).toBe(0);
+  });
+});
+
+describe('tryResolveSchema', () => {
+  it('reports the reason instead of throwing', () => {
+    const schema = schemaFor(gridStaircase, { u: { i: 4, j: 3 }, v: { i: 8, j: 1 } });
+    const result = tryResolveSchema(schema);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/cells per repeat/);
+    // A count mismatch returns before residues are compared, so there are no
+    // colliding cells to point at — the editor has to diagnose unclaimed cells
+    // separately, and this is the case that proves it.
+    expect(result.collisions).toEqual([]);
+  });
+
+  it('forwards the colliding cells when two share a residue class', () => {
+    const schema = schemaFor(gridStaircase, { u: { i: 24, j: 0 }, v: { i: 0, j: 1 } });
+    const result = tryResolveSchema(schema);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.collisions.length).toBeGreaterThan(0);
+  });
+
+  it('returns the resolved schema when it tiles', () => {
+    const result = tryResolveSchema(schemaFor(gridA3));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.resolved.cells).toHaveLength(16);
+  });
+
+  it('reports a bounded root rather than throwing', () => {
+    const result = tryResolveSchema(schemaFor(gridA3, { extent: { iCount: 2, jCount: 2 } }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/unbounded/);
   });
 });

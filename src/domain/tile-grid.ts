@@ -250,3 +250,293 @@ export function createTileSchema(
     frame: partial.frame ?? identityFrame2Json(),
   };
 }
+
+/** Every cell of a rectangular extent, row-major from the origin. */
+export function extentCells(extent: { iCount: number; jCount: number }): IntVec2[] {
+  const cells: IntVec2[] = [];
+  for (let i = 0; i < extent.iCount; i += 1) {
+    for (let j = 0; j < extent.jCount; j += 1) cells.push({ i, j });
+  }
+  return cells;
+}
+
+const SPAN_TOLERANCE = 1e-6;
+
+/**
+ * How many cells a tile actually covers, or null when it does not fit the grid.
+ *
+ * A tile has exactly two legal footprints — upright and turned — and both are
+ * derived, never chosen. The fill draws every tile at its own `length × width`
+ * and ignores the stored spans entirely, so a footprint that claims more cells
+ * than the tile covers leaves a gap that no validator can see: the cover check
+ * only counts claimed cells. Deriving the span is what keeps the two in step.
+ *
+ * `+ joint` follows from one joint per cell: `iSpan · cell.x − length = joint`.
+ * A format whose size is not a whole number of cells has no legal footprint at
+ * all — a 0.30 m tile on a 0.25 m cell — and returns null so the editor can say
+ * so instead of quietly rounding.
+ */
+export function spanFor(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+  rotated: boolean,
+): { iSpan: number; jSpan: number } | null {
+  const along = rotated ? tile.width : tile.length;
+  const across = rotated ? tile.length : tile.width;
+  const iExact = (along + joint) / cell.x;
+  const jExact = (across + joint) / cell.y;
+  const iSpan = Math.round(iExact);
+  const jSpan = Math.round(jExact);
+  if (iSpan < 1 || jSpan < 1) return null;
+  if (Math.abs(iExact - iSpan) > SPAN_TOLERANCE) return null;
+  if (Math.abs(jExact - jSpan) > SPAN_TOLERANCE) return null;
+  return { iSpan, jSpan };
+}
+
+/** Both legal footprints of a tile, upright first. A square format has only one. */
+export function spanOptions(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+): Array<{ rotated: boolean; iSpan: number; jSpan: number }> {
+  const out: Array<{ rotated: boolean; iSpan: number; jSpan: number }> = [];
+  const upright = spanFor(tile, cell, joint, false);
+  if (upright) out.push({ rotated: false, ...upright });
+  if (tile.length !== tile.width) {
+    const turned = spanFor(tile, cell, joint, true);
+    if (turned) out.push({ rotated: true, ...turned });
+  }
+  return out;
+}
+
+/** The footprint closest to a drawn rectangle. Used to turn a drag into a legal instance. */
+export function bestSpanForDrag(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+  drag: { iSpan: number; jSpan: number },
+): { rotated: boolean; iSpan: number; jSpan: number } | null {
+  const options = spanOptions(tile, cell, joint);
+  if (options.length === 0) return null;
+  let best = options[0]!;
+  let bestCost = Infinity;
+  for (const option of options) {
+    const cost = Math.abs(drag.iSpan - option.iSpan) + Math.abs(drag.jSpan - option.jSpan);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = option;
+    }
+  }
+  return best;
+}
+
+export function instanceCoversCell(instance: TileGridInstanceJson, i: number, j: number): boolean {
+  return (
+    i >= instance.i &&
+    j >= instance.j &&
+    i < instance.i + instance.iSpan &&
+    j < instance.j + instance.jSpan
+  );
+}
+
+export function instanceAtCell(
+  grid: TileGridJson,
+  i: number,
+  j: number,
+): TileGridInstanceJson | undefined {
+  return grid.instances.find((instance) => instanceCoversCell(instance, i, j));
+}
+
+function rectsOverlap(
+  a: { i: number; j: number; iSpan: number; jSpan: number },
+  b: { i: number; j: number; iSpan: number; jSpan: number },
+): boolean {
+  return (
+    a.i < b.i + b.iSpan && b.i < a.i + a.iSpan && a.j < b.j + b.jSpan && b.j < a.j + a.jSpan
+  );
+}
+
+/**
+ * Lay an occurrence down, clearing whatever it lands on.
+ *
+ * An occurrence is atomic — half a tile is not a thing — so anything the new
+ * footprint touches is removed whole. That routinely leaves cells unclaimed,
+ * which is the usual reason a domain stops tiling; {@link unclaimedCells} is how
+ * the editor points at them.
+ */
+export function putInstance(
+  grid: TileGridJson,
+  instance: TileGridInstanceJson,
+): { grid: TileGridJson; replaced: number } {
+  const kept = grid.instances.filter((existing) => !rectsOverlap(existing, instance));
+  return {
+    grid: { ...grid, instances: [...kept, instance] },
+    replaced: grid.instances.length - kept.length,
+  };
+}
+
+export function removeInstanceAt(grid: TileGridJson, i: number, j: number): TileGridJson {
+  const hit = instanceAtCell(grid, i, j);
+  if (!hit) return grid;
+  return { ...grid, instances: grid.instances.filter((instance) => instance.id !== hit.id) };
+}
+
+/**
+ * Cells inside the extent that no occurrence claims.
+ *
+ * This is the diagnostic that matters most in the editor. `validateLattice`
+ * reports a count mismatch before it ever looks at residues, so its `collisions`
+ * list is empty in exactly this case — the user would otherwise be told the
+ * numbers disagree with no indication of where.
+ */
+export function unclaimedCells(grid: TileGridJson): IntVec2[] {
+  const claimed = new Set<string>();
+  for (const instance of grid.instances) {
+    for (const cell of instanceCells(instance)) claimed.add(`${cell.i}:${cell.j}`);
+  }
+  return extentCells(grid.extent).filter((cell) => !claimed.has(`${cell.i}:${cell.j}`));
+}
+
+/** Cells claimed more than once, or claimed from outside the extent. */
+export function overclaimedCells(grid: TileGridJson): IntVec2[] {
+  const seen = new Map<string, number>();
+  for (const instance of grid.instances) {
+    for (const cell of instanceCells(instance)) {
+      const key = `${cell.i}:${cell.j}`;
+      seen.set(key, (seen.get(key) ?? 0) + 1);
+    }
+  }
+  const out: IntVec2[] = [];
+  for (const [key, count] of seen) {
+    const [i, j] = key.split(':').map(Number) as [number, number];
+    const outside = i < 0 || j < 0 || i >= grid.extent.iCount || j >= grid.extent.jCount;
+    if (count > 1 || outside) out.push({ i, j });
+  }
+  return out;
+}
+
+const MAX_NESTING = 8;
+
+/**
+ * The master-grid levels from the root inward. Depth-capped: a `childId` cycle
+ * would otherwise spin forever, and the schema format cannot forbid one.
+ */
+export function masterChain(schema: TileSchemaJson): MasterGridJson[] {
+  const chain: MasterGridJson[] = [];
+  let current = findMasterGrid(schema, schema.rootMasterGridId);
+  const seen = new Set<string>();
+  while (current) {
+    if (seen.has(current.id) || chain.length >= MAX_NESTING) {
+      throw new Error('TileSchema master grids form a cycle or nest too deeply');
+    }
+    seen.add(current.id);
+    chain.push(current);
+    current = findMasterGrid(schema, current.childId);
+  }
+  return chain;
+}
+
+/**
+ * Insert a new unbounded level above the root, leaving the tiling untouched.
+ *
+ * The old root has to gain an extent, because only the root may be unbounded —
+ * and if it mirrors, that extent must be the doubled block `resolveSchema` was
+ * building for it implicitly. Miss that and a mirrored pattern silently halves
+ * its period the moment a level is added, from an action the user expects to
+ * change nothing. The new level then steps by exactly that block, so the
+ * composite lattice and cell count both come out unchanged.
+ */
+export function addMasterLevelAboveRoot(schema: TileSchemaJson): TileSchemaJson {
+  const root = findMasterGrid(schema, schema.rootMasterGridId);
+  if (!root) throw new Error('TileSchema root master grid not found');
+
+  const mx = root.mirror.x === 'alternate';
+  const my = root.mirror.y === 'alternate';
+  const blockI = mx ? 2 : 1;
+  const blockJ = my ? 2 : 1;
+
+  const boundedOldRoot: MasterGridJson = {
+    ...root,
+    extent: { iCount: blockI, jCount: blockJ },
+  };
+  const newRoot = createMasterGrid({
+    name: `Level ${schema.masterGrids.length + 1}`,
+    childId: root.id,
+    u: { i: blockI, j: 0 },
+    v: { i: 0, j: blockJ },
+  });
+
+  return {
+    ...schema,
+    masterGrids: [...schema.masterGrids.map((m) => (m.id === root.id ? boundedOldRoot : m)), newRoot],
+    rootMasterGridId: newRoot.id,
+  };
+}
+
+/**
+ * Drop the root level, promoting its child. The promoted level loses its extent
+ * because the root must be unbounded — which changes the repeat, so the result
+ * is not guaranteed to tile. Callers validate before offering it.
+ */
+export function removeRootMasterLevel(schema: TileSchemaJson): TileSchemaJson {
+  const chain = masterChain(schema);
+  if (chain.length < 2) throw new Error('TileSchema needs at least one master grid');
+  const [root, next] = chain as [MasterGridJson, MasterGridJson];
+
+  const promoted: MasterGridJson = { ...next };
+  delete promoted.extent;
+
+  return {
+    ...schema,
+    // Drop the old root and any master grid the new chain no longer reaches.
+    masterGrids: schema.masterGrids
+      .filter((m) => m.id !== root.id)
+      .map((m) => (m.id === next.id ? promoted : m)),
+    rootMasterGridId: next.id,
+  };
+}
+
+/** Axis-aligned lattice that steps by exactly one block of the given extent. */
+export function blockStep(extent: { iCount: number; jCount: number }): {
+  u: IntVec2;
+  v: IntVec2;
+} {
+  return { u: { i: extent.iCount, j: 0 }, v: { i: 0, j: extent.jCount } };
+}
+
+export function sameVec(a: IntVec2, b: IntVec2): boolean {
+  return a.i === b.i && a.j === b.j;
+}
+
+/**
+ * Change a level's extent and keep its parent stepping by the new block.
+ *
+ * The parent's lattice is only retargeted when it still matches the *old*
+ * block — i.e. the user had not hand-tuned it. A sheared parent lattice is
+ * deliberate and is left alone, with the validator to report any mismatch;
+ * without this the common case would break the schema on every extent edit.
+ */
+export function setLevelExtent(
+  schema: TileSchemaJson,
+  levelId: string,
+  extent: { iCount: number; jCount: number },
+): TileSchemaJson {
+  const level = findMasterGrid(schema, levelId);
+  if (!level?.extent) return schema;
+
+  const previous = blockStep(level.extent);
+  const next = blockStep(extent);
+  const parent = schema.masterGrids.find((m) => m.childId === levelId);
+  const parentTracks =
+    parent != null && sameVec(parent.u, previous.u) && sameVec(parent.v, previous.v);
+
+  return {
+    ...schema,
+    masterGrids: schema.masterGrids.map((m) => {
+      if (m.id === levelId) return { ...m, extent };
+      if (parentTracks && m.id === parent?.id) return { ...m, u: next.u, v: next.v };
+      return m;
+    }),
+  };
+}

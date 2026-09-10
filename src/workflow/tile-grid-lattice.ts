@@ -343,18 +343,35 @@ function expandMaster(
   return { cells, basis: composeBasis(childBasis, levelBasis), tileGrid: tileGrid! };
 }
 
+export type SchemaResolution =
+  | { ok: true; resolved: ResolvedSchema }
+  | { ok: false; reason: string; collisions: IntVec2[] };
+
 /**
  * Flatten a schema into its composite fundamental domain plus the lattice that
- * repeats it. Throws when the result is not an exact cover — a schema that
- * cannot tile is a definition error, not a fill-time surprise.
+ * repeats it, reporting failure instead of throwing.
+ *
+ * An editor needs to show *what* is wrong while the user is mid-edit, and the
+ * colliding cells are the useful part — so they are forwarded rather than
+ * flattened into a message. Note that a cell-count mismatch reports no
+ * collisions at all: `validateLattice` returns before it looks at residues, so
+ * callers must diagnose unclaimed cells separately.
  */
-export function resolveSchema(schema: TileSchemaJson): ResolvedSchema {
+export function tryResolveSchema(schema: TileSchemaJson): SchemaResolution {
   const root = findMasterGrid(schema, schema.rootMasterGridId);
   if (!root) {
-    throw new Error(`TileSchema root master grid "${schema.rootMasterGridId}" not found`);
+    return {
+      ok: false,
+      reason: `Root master grid "${schema.rootMasterGridId}" not found`,
+      collisions: [],
+    };
   }
   if (root.extent) {
-    throw new Error('TileSchema root master grid must be unbounded (omit its extent)');
+    return {
+      ok: false,
+      reason: 'The root master grid must be unbounded — remove its extent',
+      collisions: [],
+    };
   }
 
   // An alternating mirror doubles the visual period, so the fundamental domain
@@ -391,16 +408,25 @@ export function resolveSchema(schema: TileSchemaJson): ResolvedSchema {
           ],
         };
 
-  const expansion = expandMaster(searchSchema, effectiveRoot, { x: false, y: false }, 'root', 0);
-  const { u, v } = expansion.basis;
+  let expansion;
+  try {
+    expansion = expandMaster(searchSchema, effectiveRoot, { x: false, y: false }, 'root', 0);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : 'Could not expand the schema',
+      collisions: [],
+    };
+  }
 
+  const { u, v } = expansion.basis;
   const validation = validateLattice(
     expansion.cells.map((c) => c.cell),
     u,
     v,
   );
   if (!validation.ok) {
-    throw new Error(`TileSchema "${schema.name}" does not tile: ${validation.reason}`);
+    return { ok: false, reason: validation.reason, collisions: validation.collisions };
   }
 
   const byClass = new Map<string, ResolvedCell>();
@@ -408,7 +434,23 @@ export function resolveSchema(schema: TileSchemaJson): ResolvedSchema {
     byClass.set(residueClass(cell.cell, u, v), cell);
   }
 
-  return { tileGrid: expansion.tileGrid, u, v, cells: expansion.cells, byClass };
+  return {
+    ok: true,
+    resolved: { tileGrid: expansion.tileGrid, u, v, cells: expansion.cells, byClass },
+  };
+}
+
+/**
+ * As {@link tryResolveSchema}, but throwing. The fill and the solver want a hard
+ * failure: a schema that cannot tile is a definition error, not something to
+ * paper over at fill time.
+ */
+export function resolveSchema(schema: TileSchemaJson): ResolvedSchema {
+  const result = tryResolveSchema(schema);
+  if (!result.ok) {
+    throw new Error(`TileSchema "${schema.name}" does not tile: ${result.reason}`);
+  }
+  return result.resolved;
 }
 
 export type CellResolution = {
