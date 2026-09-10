@@ -16,10 +16,11 @@ import {
   DEFAULT_PALETTE_C,
   type TileColorJson,
 } from './tile';
+import { TileSchemaJsonSchema } from './tile-grid';
 
 export const TilingProjectJsonSchema = z.object({
   type: z.literal('TilingProject'),
-  schemaVersion: z.literal(3),
+  schemaVersion: z.literal(4),
   meta: z
     .object({
       name: z.string().optional(),
@@ -31,6 +32,8 @@ export const TilingProjectJsonSchema = z.object({
   stock: StockStateJsonSchema,
   designFamily: DesignFamilyJsonSchema,
   boundaries: BoundaryConditionsJsonSchema,
+  /** Grid description of the tiling; when present the solver fills from it. */
+  tileSchema: TileSchemaJsonSchema.optional(),
   instance: DesignInstanceJsonSchema.optional(),
 });
 
@@ -145,10 +148,12 @@ function migrateProject(data: unknown): unknown {
   const root = data as Record<string, unknown>;
   const version = root.schemaVersion;
 
-  if (version === 3 && Array.isArray(root.materials)) {
-    // Strip deprecated periodMeters if present on materials
+  if ((version === 3 || version === 4) && Array.isArray(root.materials)) {
+    // v3 and v4 differ only by the optional tileSchema, so one branch normalises
+    // both: strip deprecated periodMeters and stamp the current version.
     return {
       ...root,
+      schemaVersion: 4,
       materials: migrateMaterials(root),
       tileDefinitions: Array.isArray(root.tileDefinitions)
         ? (root.tileDefinitions as LegacyTile[]).map((t) => ({
@@ -216,7 +221,7 @@ function migrateProject(data: unknown): unknown {
   return {
     ...root,
     type: 'TilingProject',
-    schemaVersion: 3,
+    schemaVersion: 4,
     materials,
     tileDefinitions,
   };
@@ -266,7 +271,7 @@ export function createDefaultProject(): TilingProjectJson {
 
   return {
     type: 'TilingProject',
-    schemaVersion: 3,
+    schemaVersion: 4,
     meta: {
       name: 'Untitled tiling',
       updatedAt: new Date().toISOString(),
@@ -318,3 +323,4 @@ export * from './material-presets';
 export * from './mat3';
 export * from './stock';
 export * from './tile';
+export * from './tile-grid';

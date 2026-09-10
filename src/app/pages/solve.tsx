@@ -17,6 +17,7 @@ export function SolvePage() {
       boundaries: project.boundaries,
       sampledStock: sampled,
       seed: nextSeed,
+      tileSchema: project.tileSchema,
     });
     setInstance(instance);
     setMessage(

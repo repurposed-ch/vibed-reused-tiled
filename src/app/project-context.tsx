@@ -5,6 +5,7 @@ import {
   projectToJsonString,
   type DesignFamilyJson,
   type DesignInstanceJson,
+  type TileSchemaJson,
   type TilingProjectJson,
 } from '@/domain/project';
 import { bakeInputFromTile, getBakedDataUrl } from '@/render/materials';
@@ -30,6 +31,7 @@ type ProjectContextValue = {
   updateProject: (fn: (prev: TilingProjectJson) => TilingProjectJson) => void;
   setDesignFamily: (family: DesignFamilyJson) => void;
   setInstance: (instance: DesignInstanceJson | undefined) => void;
+  setTileSchema: (tileSchema: TileSchemaJson | undefined) => void;
   downloadProject: () => void;
   uploadProject: (file: File) => Promise<void>;
   resetProject: () => void;
@@ -115,6 +117,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     updateProject((prev) => ({ ...prev, instance }));
   }, [updateProject]);
 
+  const setTileSchema = useCallback((tileSchema: TileSchemaJson | undefined) => {
+    updateProject((prev) => ({ ...prev, tileSchema }));
+  }, [updateProject]);
+
   const downloadProject = useCallback(() => {
     const materialMap = new Map(project.materials.map((m) => [m.id, m]));
     const withTextures: TilingProjectJson = {
@@ -160,6 +166,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       updateProject,
       setDesignFamily,
       setInstance,
+      setTileSchema,
       downloadProject,
       uploadProject,
       resetProject,
@@ -172,6 +179,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       updateProject,
       setDesignFamily,
       setInstance,
+      setTileSchema,
       downloadProject,
       uploadProject,
       resetProject,

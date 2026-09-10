@@ -1,4 +1,4 @@
-import { mat3ToSvgMatrix } from '@/domain/mat3';
+import { mat3ToSvgMatrix, placementAabb } from '@/domain/mat3';
 import { tileDisplayColor, type TileDefinitionJson } from '@/domain/tile';
 import type { DesignModuleJson } from '@/domain/design-family';
 
@@ -17,10 +17,10 @@ export function ModulePreviewSvg({
   for (const pl of module.placements) {
     const t = tileMap.get(pl.tileDefinitionId);
     if (!t) continue;
-    const x = (pl.localMat3.elements[6] ?? 0) + t.length;
-    const y = (pl.localMat3.elements[7] ?? 0) + t.width;
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
+    // Transformed corners, so rotated and mirrored placements stay in frame.
+    const aabb = placementAabb(pl.localMat3, t);
+    maxX = Math.max(maxX, aabb.maxX);
+    maxY = Math.max(maxY, aabb.maxY);
   }
 
   const pad = 0.1;

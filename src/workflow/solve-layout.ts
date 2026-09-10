@@ -1,9 +1,11 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
 import type { DesignFamilyJson, DesignModuleJson } from '@/domain/design-family';
 import type { DesignInstanceJson, PlacementJson } from '@/domain/instance';
-import { identityMat3, multiplyMat3, translationMat3, type Mat3Json } from '@/domain/mat3';
+import { identityMat3, multiplyMat3, placementAabb, translationMat3, type Mat3Json } from '@/domain/mat3';
 import type { TileDefinitionJson } from '@/domain/tile';
+import type { TileSchemaJson } from '@/domain/tile-grid';
 import type { SampledStock } from './sample-stock';
+import { fillPolygonWithTileSchema } from './tile-grid-fill';
 
 export type SolveInput = {
   tileDefinitions: TileDefinitionJson[];
@@ -11,6 +13,8 @@ export type SolveInput = {
   boundaries: BoundaryConditionsJson;
   sampledStock: SampledStock[];
   seed: number;
+  /** When set, the layout comes from the grid schema instead of module packing. */
+  tileSchema?: TileSchemaJson;
 };
 
 type Rect = { x: number; y: number; w: number; h: number };
@@ -71,13 +75,23 @@ function expandModule(
   return out;
 }
 
+/**
+ * World footprint of a placement. Taken from the transformed corners rather than
+ * from the translation column plus `length`/`width`: a rotated or mirrored
+ * placement occupies a different rectangle, and reading the raw translation would
+ * make every overlap and bounds test below wrong for it.
+ */
 function placementFootprint(
   placement: PlacementJson,
   tile: TileDefinitionJson,
 ): Rect {
-  const x = placement.mat3.elements[6] ?? 0;
-  const y = placement.mat3.elements[7] ?? 0;
-  return { x, y, w: tile.length, h: tile.width };
+  const aabb = placementAabb(placement.mat3, tile);
+  return {
+    x: aabb.minX,
+    y: aabb.minY,
+    w: aabb.maxX - aabb.minX,
+    h: aabb.maxY - aabb.minY,
+  };
 }
 
 function overlaps(a: Rect, b: Rect, gap: number): boolean {
@@ -147,6 +161,8 @@ function scoreCandidate(
  * Solver v1: place primary modules along +X then +Y, then greedy leftover fill on a coarse grid.
  */
 export function solveLayout(input: SolveInput): DesignInstanceJson {
+  if (input.tileSchema) return solveFromTileSchema(input, input.tileSchema);
+
   const tiles = new Map(input.tileDefinitions.map((t) => [t.id, t]));
   const remaining = new Map(input.sampledStock.map((s) => [s.tileDefinitionId, s.count]));
   const bounds = outerAabb(input.boundaries);
@@ -259,6 +275,41 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
       solverStats: {
         placementCount: placements.length,
         remainingTotal: [...remaining.values()].reduce((a, b) => a + b, 0),
+      },
+    },
+  };
+}
+
+/**
+ * Grid path: the schema already describes the whole tiling, so the boundary is
+ * filled directly from it and neither the module walk nor the greedy fill runs.
+ */
+function solveFromTileSchema(input: SolveInput, tileSchema: TileSchemaJson): DesignInstanceJson {
+  const result = fillPolygonWithTileSchema({
+    schema: tileSchema,
+    tiles: input.tileDefinitions,
+    boundaries: input.boundaries,
+    sampledStock: input.sampledStock,
+  });
+
+  const shortfallTotal = Object.values(result.stats.shortfall).reduce((a, b) => a + b, 0);
+
+  return {
+    type: 'DesignInstance',
+    placements: result.placements,
+    meta: {
+      seed: input.seed,
+      sampledStock: input.sampledStock,
+      solverStats: {
+        placementCount: result.placements.length,
+        cells: result.stats.cells,
+        wholeTiles: result.stats.wholeTiles,
+        fallbackTiles: result.stats.fallbackTiles,
+        cutTiles: result.stats.cutTiles,
+        // Tiles placed beyond the sampled stock. Filling the boundary completely
+        // takes priority over staying inside stock, so the overdraw is reported
+        // rather than left as a hole.
+        stockShortfall: shortfallTotal,
       },
     },
   };

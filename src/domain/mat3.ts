@@ -32,6 +32,24 @@ export function translationMat3(x: number, y: number): Mat3Json {
   };
 }
 
+/** Counter-clockwise rotation about the local origin, in radians. */
+export function rotationMat3(angle: number): Mat3Json {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return {
+    type: 'Mat3',
+    elements: [c, s, 0, -s, c, 0, 0, 0, 1],
+  };
+}
+
+/** Scale about the local origin. Negative factors mirror, which is intentional. */
+export function scaleMat3(sx: number, sy: number): Mat3Json {
+  return {
+    type: 'Mat3',
+    elements: [sx, 0, 0, 0, sy, 0, 0, 0, 1],
+  };
+}
+
 /** Accept Mat3 objects or bare 9-number arrays (common LLM mistake). */
 export function coerceMat3Json(value: unknown): unknown {
   if (Array.isArray(value) && value.length === 9 && value.every((n) => typeof n === 'number')) {
@@ -61,6 +79,48 @@ export function multiplyMat3(a: Mat3Json, b: Mat3Json): Mat3Json {
       ae[2]! * be[6]! + ae[5]! * be[7]! + ae[8]! * be[8]!,
     ],
   };
+}
+
+/** Apply a Mat3Json to a point, translation included. */
+export function transformPointMat3(m: Mat3Json, x: number, y: number): { x: number; y: number } {
+  const e = m.elements;
+  return {
+    x: e[0]! * x + e[3]! * y + e[6]!,
+    y: e[1]! * x + e[4]! * y + e[7]!,
+  };
+}
+
+export type Aabb = { minX: number; minY: number; maxX: number; maxY: number };
+
+/**
+ * World envelope of a `width × height` rectangle placed by `mat3`.
+ *
+ * Reuse context: callers used to read `elements[6]/[7]` and add `tile.length` /
+ * `tile.width` directly, which silently assumes the placement is axis-aligned and
+ * unrotated. Rotated or mirrored placements need the transformed corners, so
+ * every footprint and viewBox calculation goes through here.
+ */
+export function transformedRectAabb(m: Mat3Json, width: number, height: number): Aabb {
+  const corners = [
+    transformPointMat3(m, 0, 0),
+    transformPointMat3(m, width, 0),
+    transformPointMat3(m, width, height),
+    transformPointMat3(m, 0, height),
+  ];
+  return {
+    minX: Math.min(...corners.map((c) => c.x)),
+    minY: Math.min(...corners.map((c) => c.y)),
+    maxX: Math.max(...corners.map((c) => c.x)),
+    maxY: Math.max(...corners.map((c) => c.y)),
+  };
+}
+
+/** World envelope of a tile placed by `mat3`, using its `length × width` footprint. */
+export function placementAabb(
+  m: Mat3Json,
+  tile: { length: number; width: number },
+): Aabb {
+  return transformedRectAabb(m, tile.length, tile.width);
 }
 
 /** SVG matrix(a b c d e f) from column-major Mat3: [m00,m10,m20, m01,m11,m21, m02,m12,m22]. */

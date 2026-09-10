@@ -9,12 +9,14 @@ import {
 import { buildBakeFragmentShader, compileSdfExpression } from '@/render/materials/sdf-to-glsl';
 import { mulberry32, sampleStock } from '@/workflow/sample-stock';
 import { solveLayout } from '@/workflow/solve-layout';
+import { findRapportModule, rapportToTileSchema } from '@/workflow/rapport';
+import { resolveSchema } from '@/workflow/tile-grid-lattice';
 
 describe('project schema', () => {
-  it('round-trips the default project at schemaVersion 3', () => {
+  it('round-trips the default project at schemaVersion 4', () => {
     const project = createDefaultProject();
     const again = parseTilingProject(JSON.parse(JSON.stringify(project)) as unknown);
-    expect(again.schemaVersion).toBe(3);
+    expect(again.schemaVersion).toBe(4);
     expect(again.materials.length).toBeGreaterThan(0);
     expect(again.materials[0]).not.toHaveProperty('periodMeters');
     expect(again.tileDefinitions[0]?.materialId).toBeTruthy();
@@ -71,7 +73,7 @@ describe('project schema', () => {
       },
     };
     const migrated = parseTilingProject(legacy);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(migrated.materials.some((m) => m.name === 'terracotta')).toBe(true);
     expect(migrated.tileDefinitions[0]?.color).toEqual({
       mode: 'brightness',
@@ -108,7 +110,7 @@ describe('project schema', () => {
       ],
     };
     const migrated = parseTilingProject(v2);
-    expect(migrated.schemaVersion).toBe(3);
+    expect(migrated.schemaVersion).toBe(4);
     expect(migrated.materials[0]).not.toHaveProperty('periodMeters');
     expect(migrated.tileDefinitions[0]?.color).toEqual({
       mode: 'palette',
@@ -203,5 +205,68 @@ describe('workflow', () => {
       seed: 7,
     });
     expect(instance.placements.length).toBeGreaterThan(0);
+  });
+});
+
+describe('tile schema persistence', () => {
+  it('migrates a v3 project forward and leaves it without a tile schema', () => {
+    const v3 = { ...createDefaultProject(), schemaVersion: 3, tileSchema: undefined };
+    const migrated = parseTilingProject(JSON.parse(JSON.stringify(v3)) as unknown);
+    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.tileSchema).toBeUndefined();
+  });
+
+  it('round-trips a tile schema through the project document', () => {
+    const project = createDefaultProject();
+    const module = findRapportModule({
+      tiles: project.tileDefinitions,
+      targets: project.tileDefinitions.map((t) => ({
+        tileDefinitionId: t.id,
+        areaShare: 50,
+      })),
+    });
+    expect(module).not.toBeNull();
+    if (!module) return;
+
+    const withSchema = { ...project, tileSchema: rapportToTileSchema(module) };
+    const again = projectFromJsonString(projectToJsonString(withSchema));
+
+    expect(again.tileSchema?.type).toBe('TileSchema');
+    expect(again.tileSchema?.tileGrids).toHaveLength(1);
+    expect(again.tileSchema?.masterGrids).toHaveLength(1);
+    expect(again.tileSchema?.rootMasterGridId).toBe(withSchema.tileSchema.masterGrids[0]?.id);
+    // The persisted schema still resolves to an exact cover after the round trip.
+    expect(() => resolveSchema(again.tileSchema!)).not.toThrow();
+  });
+
+  it('solves from the tile schema when the project carries one', () => {
+    const project = createDefaultProject();
+    const module = findRapportModule({
+      tiles: project.tileDefinitions,
+      targets: project.tileDefinitions.map((t) => ({
+        tileDefinitionId: t.id,
+        areaShare: 50,
+      })),
+    });
+    expect(module).not.toBeNull();
+    if (!module) return;
+
+    const sampled = sampleStock(project.stock, mulberry32(7));
+    const instance = solveLayout({
+      tileDefinitions: project.tileDefinitions,
+      designFamily: project.designFamily,
+      boundaries: project.boundaries,
+      sampledStock: sampled,
+      seed: 7,
+      tileSchema: rapportToTileSchema(module),
+    });
+
+    expect(instance.placements.length).toBeGreaterThan(0);
+    // The grid path reports cell-level statistics the module packer never has.
+    expect(instance.meta?.solverStats?.cells).toBeGreaterThan(0);
+    expect(instance.meta?.solverStats?.placementCount).toBe(instance.placements.length);
+    // Every placement names a tile the project actually defines.
+    const ids = new Set(project.tileDefinitions.map((t) => t.id));
+    expect(instance.placements.every((p) => ids.has(p.tileDefinitionId))).toBe(true);
   });
 });
