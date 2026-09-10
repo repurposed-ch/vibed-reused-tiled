@@ -14,33 +14,29 @@ import {
 
 // Deliberately non-square: a square extent hides every jCount-vs-jCount-1 slip.
 const extent = { iCount: 4, jCount: 2 };
-const u = { i: 4, j: 0 };
-const v = { i: 0, j: 2 };
 
 describe('canvasWindow', () => {
   it('surrounds the block with the requested ring', () => {
-    const w = canvasWindow(extent, 1, u, v);
+    const w = canvasWindow(extent, 1);
     expect(w).toEqual({ minI: -1, maxI: 5, minJ: -1, maxJ: 3, jCount: 2 });
     expect(viewBox(w)).toBe('-1 -1 6 4');
   });
 
-  it('stretches to contain a vector that leaves the ring', () => {
-    // The staircase generators: v reaches three cells past a 4-wide block.
-    const w = canvasWindow({ iCount: 4, jCount: 7 }, 1, { i: 4, j: 4 }, { i: 7, j: 1 });
-    expect(w.maxI).toBe(11); // u + v = (11, 5)
-    expect(w.maxJ).toBe(8);
-    expect(w.minI).toBe(-1);
-  });
+  it('is set by the ring alone, so a long vector cannot shrink the cells', () => {
+    // The staircase generators reach three cells past a 4-wide block. The window
+    // ignores them — the axes are drawn unclipped on top instead, and growing
+    // the ring is what brings a tip back within reach of the pointer.
+    const tight = canvasWindow({ iCount: 4, jCount: 7 }, 1);
+    expect(tight).toEqual({ minI: -1, maxI: 5, minJ: -1, maxJ: 8, jCount: 7 });
 
-  it('grows on the side a negative vector needs, not symmetrically', () => {
-    const w = canvasWindow(extent, 1, { i: -6, j: 0 }, v);
-    expect(w.minI).toBe(-6);
-    expect(w.maxI).toBe(5);
+    const grown = canvasWindow({ iCount: 4, jCount: 7 }, 4);
+    expect(grown.maxI).toBe(8);
+    expect(grown.minI).toBe(-4);
   });
 });
 
 describe('cell and corner mapping', () => {
-  const w = canvasWindow(extent, 1, u, v);
+  const w = canvasWindow(extent, 1);
 
   it('puts the top row at the top of the viewBox', () => {
     expect(cellRect(w, 0, extent.jCount - 1)).toEqual({ x: 0, y: 0, width: 1, height: 1 });

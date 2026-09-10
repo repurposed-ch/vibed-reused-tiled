@@ -1,6 +1,8 @@
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { AppLayout } from './layout';
 import { ProjectProvider } from './project-context';
+import { UiStateProvider } from './ui-state';
+import { AutoSolve } from './auto-solve';
 import { OverviewPage } from './pages/overview';
 import { TilesPage } from './pages/tiles';
 import { MaterialsPage } from './pages/materials';
@@ -15,8 +17,12 @@ import { SettingsPage } from './pages/settings';
 
 export function App() {
   return (
-    <ProjectProvider>
-      <HashRouter>
+    <UiStateProvider>
+      <ProjectProvider>
+        {/* Keeps the solved instance in step with every edit. Must sit inside
+            both providers; renders nothing. */}
+        <AutoSolve />
+        <HashRouter>
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<OverviewPage />} />
@@ -25,14 +31,15 @@ export function App() {
             <Route path="stock" element={<StockPage />} />
             <Route path="design-family" element={<DesignFamilyPage />} />
             <Route path="tile-schema" element={<TileSchemaPage />} />
-        <Route path="boundaries" element={<BoundariesPage />} />
+            <Route path="boundaries" element={<BoundariesPage />} />
             <Route path="solve" element={<SolvePage />} />
             <Route path="view/2d" element={<View2dPage />} />
             <Route path="view/3d" element={<View3dPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
-      </HashRouter>
-    </ProjectProvider>
+        </HashRouter>
+      </ProjectProvider>
+    </UiStateProvider>
   );
 }

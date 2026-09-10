@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProject } from '../project-context';
+import { useUiState } from '../ui-state';
 import {
   addMasterLevelAboveRoot,
   bestSpanForDrag,
@@ -19,6 +20,7 @@ import {
   removeInstanceAt,
   removeRootMasterLevel,
   setLevelExtent,
+  spanFor,
   spanOptions,
   tileDisplayColor,
   tileGridCells,
@@ -60,6 +62,140 @@ function tileInitials(name: string | undefined): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * The two lattice vectors as a 2x2 block: rows are the vectors, columns their i
+ * and j components. Four loose fields in a flex row wrapped as `u.i u.j v.i` /
+ * `v.j`, which splits a vector across lines. The row labels carry the same
+ * colours as the arrows on the canvas so a field ties to the arrow it drives.
+ */
+function AxisFields({
+  u,
+  v,
+  onChange,
+}: {
+  u: IntVec2;
+  v: IntVec2;
+  onChange: (which: 'u' | 'v', value: IntVec2) => void;
+}) {
+  const heading = {
+    fontSize: '0.7rem',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+    textAlign: 'center' as const,
+  };
+
+  const component = (which: 'u' | 'v', axis: 'i' | 'j') => {
+    const value = which === 'u' ? u : v;
+    return (
+      <input
+        type="number"
+        // The visible label is split across a row and a column header, so the
+        // field needs its own name for anything not reading the grid.
+        aria-label={`${which}.${axis}`}
+        value={value[axis]}
+        onChange={(e) =>
+          onChange(which, { ...value, [axis]: Math.trunc(Number(e.target.value) || 0) })
+        }
+      />
+    );
+  };
+
+  const rowLabel = (which: 'u' | 'v') => (
+    <span
+      className="mono"
+      style={{ color: which === 'u' ? '#d9773a' : '#6f8f6a', fontWeight: 600 }}
+    >
+      {which}
+    </span>
+  );
+
+  return (
+    <div className="field">
+      <label>Axes (cells)</label>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1.25rem 1fr 1fr',
+          gap: '0.35rem',
+          alignItems: 'center',
+        }}
+      >
+        <span />
+        <span className="muted" style={heading}>
+          i
+        </span>
+        <span className="muted" style={heading}>
+          j
+        </span>
+        {rowLabel('u')}
+        {component('u', 'i')}
+        {component('u', 'j')}
+        {rowLabel('v')}
+        {component('v', 'i')}
+        {component('v', 'j')}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Area shares for the rapport search.
+ *
+ * These are relative weights, not percentages — `findRapportModule` divides each
+ * by their total — so 50/50 and 10/10 ask for the same thing. The slider sets the
+ * weight and the figure beside it shows what that normalises to, which is the
+ * number the search actually targets.
+ *
+ * Kept out of a `.field`: `.field input` puts a background, border and padding on
+ * its inputs, which render on a range track and look broken. The palette sliders
+ * in `tiles.tsx` avoid it the same way.
+ */
+function ShareSliders({
+  tiles,
+  shares,
+  onChange,
+}: {
+  tiles: TileDefinitionJson[];
+  shares: Record<string, number>;
+  onChange: (next: Record<string, number>) => void;
+}) {
+  const weightOf = (id: string) => shares[id] ?? 50;
+  const total = tiles.reduce((sum, t) => sum + weightOf(t.id), 0);
+
+  return (
+    <div className="stack" style={{ marginTop: '0.75rem' }}>
+      {tiles.map((t) => {
+        const weight = weightOf(t.id);
+        const percent = total > 0 ? Math.round((weight / total) * 100) : 0;
+        return (
+          <div key={t.id} className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+            <label className="mono" style={{ width: '8rem', margin: 0, fontSize: '0.8rem' }}>
+              {t.name}
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={weight}
+              // A bare range renders a white track on this dark theme; the
+              // accent tints the filled part and the thumb to match the app.
+              style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+              onChange={(e) => onChange({ ...shares, [t.id]: Number(e.target.value) })}
+            />
+            <span className="mono" style={{ width: '3rem', textAlign: 'right', fontSize: '0.8rem' }}>
+              {percent}%
+            </span>
+          </div>
+        );
+      })}
+      <p className="muted" style={{ fontSize: '0.8rem', margin: 0 }}>
+        Relative weights — the search normalises them, so 50/50 and 10/10 ask for the same split.
+      </p>
+    </div>
+  );
+}
+
 function formatVec(v: IntVec2): string {
   return `(${v.i}, ${v.j})`;
 }
@@ -94,13 +230,28 @@ function previewBoundary(grid: TileGridJson, u: IntVec2, v: IntVec2): BoundaryCo
 
 export function TileSchemaPage() {
   const { project, setTileSchema } = useProject();
-  const [draft, setDraft] = useState<TileSchemaJson | null>(project.tileSchema ?? null);
-  const [selectedLevelId, setSelectedLevelId] = useState<string | null>(null);
-  const [paintTileId, setPaintTileId] = useState<string>(project.tileDefinitions[0]?.id ?? '');
-  const [pad, setPad] = useState(1);
+  const { ui, patchUi } = useUiState();
+
+  // Everything the user authors here lives in the persisted UI state, not in
+  // page-local state: React Router unmounts the page on navigation, which used
+  // to throw away the whole draft and reset the sliders.
+  const draft = ui.schemaDraft ?? project.tileSchema ?? null;
+  const setDraft = (next: TileSchemaJson | null) => patchUi({ schemaDraft: next });
+  const selectedLevelId = ui.selectedLevelId;
+  const setSelectedLevelId = (next: string | null) => patchUi({ selectedLevelId: next });
+  const paintTileId = ui.paintTileId ?? project.tileDefinitions[0]?.id ?? '';
+  const setPaintTileId = (next: string) => patchUi({ paintTileId: next });
+  const pad = ui.pad;
+  const setPad = (next: number) => patchUi({ pad: next });
+  // The axes live on the same canvas as the tiles; this only switches what a
+  // drag does and whether they are drawn.
+  const axesOn = ui.axesOn;
+  const setAxesOn = (next: boolean) => patchUi({ axesOn: next });
+  const shares = ui.shares;
+  const setShares = (next: Record<string, number>) => patchUi({ shares: next });
+  const raw = ui.schemaRaw;
+  const setRaw = (next: string | null) => patchUi({ schemaRaw: next });
   const [message, setMessage] = useState<string | null>(null);
-  const [shares, setShares] = useState<Record<string, number>>({});
-  const [raw, setRaw] = useState<string | null>(null);
   const [rawError, setRawError] = useState<string | null>(null);
 
   const tiles = project.tileDefinitions;
@@ -115,7 +266,10 @@ export function TileSchemaPage() {
     }
   }, [draft]);
 
-  const tileGrid = draft ? findTileGrid(draft, chain[chain.length - 1]?.childId ?? '') : undefined;
+  // The innermost master grid is the one whose lattice acts on tile cells, so it
+  // is the one the axes on the tile-grid canvas belong to.
+  const innerMaster = chain[chain.length - 1];
+  const tileGrid = draft ? findTileGrid(draft, innerMaster?.childId ?? '') : undefined;
   const activeLevelId = selectedLevelId ?? tileGrid?.id ?? null;
   const activeMaster = draft && activeLevelId ? findMasterGrid(draft, activeLevelId) : undefined;
   const editingTileGrid = Boolean(tileGrid && activeLevelId === tileGrid.id);
@@ -131,6 +285,18 @@ export function TileSchemaPage() {
     referenced.add(tileGrid.fallbackTileDefinitionId);
     return [...referenced].filter((id) => !tileMap.has(id));
   }, [tileGrid, tileMap]);
+
+  // A fallback is placed one per cell when a larger format is clipped, so it has
+  // to cover exactly one cell. Anything bigger would be drawn at its real size
+  // on a single cell and overlap its neighbours.
+  const coversOneCell = (tile: TileDefinitionJson) => {
+    if (!tileGrid) return false;
+    const span = spanFor(tile, tileGrid.cell, tileGrid.joint, false);
+    return span?.iSpan === 1 && span.jSpan === 1;
+  };
+  const unitTiles = tileGrid ? tiles.filter(coversOneCell) : [];
+  const fallbackTile = tileGrid ? tileMap.get(tileGrid.fallbackTileDefinitionId) : undefined;
+  const fallbackIsUnit = fallbackTile ? coversOneCell(fallbackTile) : false;
 
   const unclaimed = useMemo(() => (tileGrid ? unclaimedCells(tileGrid) : []), [tileGrid]);
   // Blanks are normal in a sheared repeat — a neighbouring copy covers them — so
@@ -305,20 +471,25 @@ export function TileSchemaPage() {
     };
   };
 
-  const save = () => {
-    if (!draft) return;
+  /**
+   * Commit the draft the moment it tiles.
+   *
+   * There is no Save button: every edit already persists to the UI state, and
+   * the project takes the schema as soon as it is usable, which re-solves the
+   * layout. A draft that does not tile is deliberately withheld — the fill
+   * throws on one, so committing it would take the Solve page down with it. The
+   * project simply keeps the last version that worked.
+   */
+  const committed = project.tileSchema ? JSON.stringify(project.tileSchema) : null;
+  useEffect(() => {
+    if (!draft || !valid) return;
     const parsed = TileSchemaJsonSchema.safeParse(draft);
-    if (!parsed.success) {
-      setMessage(parsed.error.issues[0]?.message ?? 'Schema is not valid');
-      return;
-    }
-    try {
-      setTileSchema(parsed.data);
-      setMessage('Saved to project.');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not save');
-    }
-  };
+    if (!parsed.success) return;
+    const next = JSON.stringify(parsed.data);
+    if (next === committed) return;
+    setTileSchema(parsed.data);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, valid, committed]);
 
   const addLevel = () => {
     if (!draft) return;
@@ -352,6 +523,9 @@ export function TileSchemaPage() {
             Start from an empty repeat, or let the rapport search find one that hits your area
             shares.
           </p>
+          {tiles.length > 0 && (
+            <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
+          )}
           <div className="row" style={{ marginTop: '0.75rem' }}>
             <button type="button" className="btn primary" onClick={createBlank} disabled={tiles.length === 0}>
               Create blank
@@ -505,11 +679,15 @@ export function TileSchemaPage() {
                     value={tileGrid.fallbackTileDefinitionId}
                     onChange={(e) => patchGrid({ fallbackTileDefinitionId: e.target.value })}
                   >
-                    {tiles.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
+                    {tiles.map((t) => {
+                      const unit = coversOneCell(t);
+                      return (
+                        <option key={t.id} value={t.id} disabled={!unit}>
+                          {t.name}
+                          {unit ? '' : ' — larger than one cell'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
@@ -533,6 +711,16 @@ export function TileSchemaPage() {
                   </select>
                 </div>
               </div>
+              {!fallbackIsUnit && (
+                <p className="error" style={{ marginTop: '0.5rem' }}>
+                  {fallbackTile
+                    ? `${fallbackTile.name} covers more than one cell, so it cannot break a clipped format down.`
+                    : 'The fallback tile is missing from the catalogue.'}{' '}
+                  {unitTiles.length > 0
+                    ? `Pick a one-cell format — ${unitTiles.map((t) => t.name).join(', ')}.`
+                    : 'No format in the catalogue covers exactly one cell at this cell size, so clipped tiles would leave the boundary bare.'}
+                </p>
+              )}
               {paintTile && footprints.length === 0 && (
                 <p className="error" style={{ marginTop: '0.5rem' }}>
                   {paintTile.name} is {paintTile.length}×{paintTile.width} m, which is not a whole
@@ -540,13 +728,60 @@ export function TileSchemaPage() {
                 </p>
               )}
 
-              <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
+              <div className="row" style={{ marginTop: '0.75rem' }}>
+                <label className="field" style={{ minWidth: 'auto' }}>
+                  <span>Edit axes</span>
+                  <input
+                    type="checkbox"
+                    checked={axesOn}
+                    onChange={(e) => setAxesOn(e.target.checked)}
+                  />
+                </label>
+              </div>
+
+              {axesOn && innerMaster && (
+                <div className="row" style={{ alignItems: 'flex-end' }}>
+                  <AxisFields
+                    u={innerMaster.u}
+                    v={innerMaster.v}
+                    onChange={(which, value) => patchMaster(innerMaster.id, { [which]: value })}
+                  />
+                  <div className="field">
+                    <label>Ring</label>
+                    <div className="row" style={{ gap: '0.25rem' }}>
+                      <button type="button" className="btn" onClick={() => setPad(Math.max(1, pad - 1))}>
+                        −
+                      </button>
+                      <span
+                        className="mono"
+                        style={{ alignSelf: 'center', minWidth: '1.5rem', textAlign: 'center' }}
+                      >
+                        {pad}
+                      </span>
+                      <button type="button" className="btn" onClick={() => setPad(Math.min(12, pad + 1))}>
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div
+                className="canvas-frame"
+                style={{
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  // The axes deliberately leave the grid, so the frame must stop
+                  // clipping while they are on.
+                  overflow: axesOn ? 'visible' : 'auto',
+                }}
+              >
                 <TileGridCanvas
                   extent={tileGrid.extent}
                   pad={pad}
-                  u={chain[chain.length - 1]?.u ?? { i: 1, j: 0 }}
-                  v={chain[chain.length - 1]?.v ?? { i: 0, j: 1 }}
-                  mode="paint"
+                  u={innerMaster?.u ?? { i: 1, j: 0 }}
+                  v={innerMaster?.v ?? { i: 0, j: 1 }}
+                  mode={axesOn ? 'lattice' : 'paint'}
                   cellFill={cellFill}
                   unclaimed={unclaimed}
                   unclaimedAreFaults={countMismatch}
@@ -554,11 +789,15 @@ export function TileSchemaPage() {
                   resolveFootprint={resolveFootprint}
                   onPaint={paintAt}
                   onCellClick={clickCell}
+                  onLatticeChange={(which, value) =>
+                    innerMaster && patchMaster(innerMaster.id, { [which]: value })
+                  }
                 />
               </div>
               <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                Drag to lay a tile — the footprint snaps to the format's real size, and the drag's
-                shape picks upright or turned. Click an occurrence to remove it.
+                {axesOn
+                  ? 'Drag either arrow tip to a grid corner to set how the repeat steps. An axis that leaves the grid is normal — grow the ring to reach further.'
+                  : "Drag to lay a tile — the footprint snaps to the format's real size, and the drag's shape picks upright or turned. Click an occurrence to remove it."}
               </p>
             </>
           )}
@@ -645,54 +884,11 @@ export function TileSchemaPage() {
               )}
 
               <div className="row">
-                <div className="field">
-                  <label>u.i</label>
-                  <input
-                    type="number"
-                    value={activeMaster.u.i}
-                    onChange={(e) =>
-                      patchMaster(activeMaster.id, {
-                        u: { ...activeMaster.u, i: Math.trunc(Number(e.target.value) || 0) },
-                      })
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label>u.j</label>
-                  <input
-                    type="number"
-                    value={activeMaster.u.j}
-                    onChange={(e) =>
-                      patchMaster(activeMaster.id, {
-                        u: { ...activeMaster.u, j: Math.trunc(Number(e.target.value) || 0) },
-                      })
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label>v.i</label>
-                  <input
-                    type="number"
-                    value={activeMaster.v.i}
-                    onChange={(e) =>
-                      patchMaster(activeMaster.id, {
-                        v: { ...activeMaster.v, i: Math.trunc(Number(e.target.value) || 0) },
-                      })
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label>v.j</label>
-                  <input
-                    type="number"
-                    value={activeMaster.v.j}
-                    onChange={(e) =>
-                      patchMaster(activeMaster.id, {
-                        v: { ...activeMaster.v, j: Math.trunc(Number(e.target.value) || 0) },
-                      })
-                    }
-                  />
-                </div>
+                <AxisFields
+                  u={activeMaster.u}
+                  v={activeMaster.v}
+                  onChange={(which, value) => patchMaster(activeMaster.id, { [which]: value })}
+                />
                 <div className="field">
                   <label>Ring</label>
                   <div className="row" style={{ gap: '0.25rem' }}>
@@ -774,6 +970,18 @@ export function TileSchemaPage() {
           </p>
         )}
 
+        {preview && preview.stats.fallbackSubstitutedFor && (
+          <p className="muted" style={{ color: '#d9773a' }}>
+            The declared fallback covers more than one cell, so a one-cell format stood in for it.
+            Set the fallback explicitly to control which.
+          </p>
+        )}
+        {preview && preview.stats.unfilled > 0 && (
+          <p className="error">
+            {preview.stats.unfilled} cell(s) would be left bare: there is no one-cell format to
+            break a clipped tile down to.
+          </p>
+        )}
         {preview && (
           <>
             <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
@@ -795,9 +1003,6 @@ export function TileSchemaPage() {
       <section className="panel no-print">
         <h2>Project</h2>
         <div className="row">
-          <button type="button" className="btn primary" onClick={save} disabled={!valid}>
-            Save to project
-          </button>
           <button
             type="button"
             className="btn"
@@ -805,8 +1010,9 @@ export function TileSchemaPage() {
               setDraft(project.tileSchema ?? null);
               setMessage(null);
             }}
+            disabled={!project.tileSchema}
           >
-            Reload from project
+            Revert to last valid
           </button>
           <button type="button" className="btn" onClick={seedFromRapport}>
             Reseed from rapport
@@ -823,27 +1029,15 @@ export function TileSchemaPage() {
             Clear schema
           </button>
         </div>
-        {!valid && (
-          <p className="muted" style={{ marginTop: '0.75rem' }}>
-            Saving is blocked while the repeat does not tile — the solver throws on a schema it
-            cannot resolve.
-          </p>
-        )}
+        <p className="muted" style={{ marginTop: '0.75rem' }}>
+          {valid
+            ? 'Applied to the project and re-solved automatically — there is nothing to save.'
+            : 'This draft is not being applied: the repeat does not tile, and the fill throws on a schema it cannot resolve. The project is still using the last version that worked.'}
+        </p>
         {message && <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>}
 
-        <div className="row" style={{ marginTop: '1rem' }}>
-          {tiles.map((t) => (
-            <div className="field" key={t.id}>
-              <label>{t.name} share</label>
-              <input
-                type="number"
-                min={0}
-                value={shares[t.id] ?? 50}
-                onChange={(e) => setShares({ ...shares, [t.id]: Number(e.target.value) || 0 })}
-              />
-            </div>
-          ))}
-        </div>
+        <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>Rapport shares</h3>
+        <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
       </section>
 
       <section className="panel no-print">

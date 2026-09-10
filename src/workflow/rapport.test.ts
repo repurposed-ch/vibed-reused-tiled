@@ -343,3 +343,75 @@ describe('rapportToTileSchema', () => {
     expect(resolved.cells).toHaveLength(module.widthUnits * module.heightUnits * 2);
   });
 });
+
+describe('zero shares', () => {
+  const odd = createTileDefinition({ id: 'odd', name: '13x13', length: 0.13, width: 0.13 });
+
+  it('never places a format the designer asked for none of', () => {
+    const module = findRapportModule({
+      tiles: [large, small, slab],
+      targets: [
+        { tileDefinitionId: 'large', areaShare: 50 },
+        { tileDefinitionId: 'small', areaShare: 50 },
+        { tileDefinitionId: 'slab', areaShare: 0 },
+      ],
+    });
+
+    expect(module).not.toBeNull();
+    if (!module) return;
+    expect(module.placements.some((p) => p.tileDefinitionId === 'slab')).toBe(false);
+    expect(module.achievedShares).not.toHaveProperty('slab');
+  });
+
+  it('keeps an unwanted format out of the cell size', () => {
+    // gridUnit is a GCD over the catalogue, so a 0.13 m tile would drag the unit
+    // from 0.15 m down to 0.01 m — wrecking a pattern built from formats the
+    // designer does want. A zero share has to be excluded before that runs.
+    const targets = [
+      { tileDefinitionId: 'large', areaShare: 60 },
+      { tileDefinitionId: 'small', areaShare: 40 },
+    ];
+    const without = findRapportModule({ tiles: [large, small], targets });
+    const withZero = findRapportModule({
+      tiles: [large, small, odd],
+      targets: [...targets, { tileDefinitionId: 'odd', areaShare: 0 }],
+    });
+
+    expect(without).not.toBeNull();
+    expect(withZero).not.toBeNull();
+    if (!without || !withZero) return;
+    expect(withZero.unit).toBeCloseTo(without.unit, 9);
+    expect(withZero.unit).toBeCloseTo(0.15, 9);
+  });
+
+  it('produces the same repeat whether or not zero-share formats are listed', () => {
+    const base = findRapportModule({
+      tiles: [large, small],
+      targets: [
+        { tileDefinitionId: 'large', areaShare: 60 },
+        { tileDefinitionId: 'small', areaShare: 40 },
+      ],
+    });
+    const padded = findRapportModule({
+      tiles: [large, small, slab],
+      targets: [
+        { tileDefinitionId: 'large', areaShare: 60 },
+        { tileDefinitionId: 'small', areaShare: 40 },
+        { tileDefinitionId: 'slab', areaShare: 0 },
+      ],
+    });
+    expect(JSON.stringify(padded)).toBe(JSON.stringify(base));
+  });
+
+  it('still returns null when nothing carries a positive share', () => {
+    expect(
+      findRapportModule({
+        tiles: [large, small],
+        targets: [
+          { tileDefinitionId: 'large', areaShare: 0 },
+          { tileDefinitionId: 'small', areaShare: 0 },
+        ],
+      }),
+    ).toBeNull();
+  });
+});

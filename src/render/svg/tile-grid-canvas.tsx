@@ -110,16 +110,12 @@ export function TileGridCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
 
-  const win: CanvasWindow = canvasWindow(extent, pad, u, v);
+  const win: CanvasWindow = canvasWindow(extent, pad);
   const size = viewBoxSize(win);
   const unclaimedKeys = new Set(unclaimed.map((c) => `${c.i}:${c.j}`));
   const conflictKeys = new Set(conflicts.map((c) => `${c.i}:${c.j}`));
 
   const originPoint = cornerPoint(win, 0, 0);
-  const uPoint = cornerPoint(win, u.i, u.j);
-  const vPoint = cornerPoint(win, v.i, v.j);
-  const sumPoint = cornerPoint(win, u.i + v.i, u.j + v.j);
-
   const dragValue = drag?.kind === 'lattice' ? drag.value : null;
   const liveU = drag?.kind === 'lattice' && drag.which === 'u' ? dragValue! : u;
   const liveV = drag?.kind === 'lattice' && drag.which === 'v' ? dragValue! : v;
@@ -198,11 +194,14 @@ export function TileGridCanvas({
       viewBox={viewBox(win)}
       preserveAspectRatio="xMidYMid meet"
       // Explicit pixel size beats the global `svg { width: 100% }` rule so cells
-      // stay hittable on a large extent; the frame scrolls instead of shrinking.
+      // stay hittable on a large extent. `overflow: visible` lets an axis that
+      // reaches past the ring keep drawing instead of being cut off at the grid
+      // edge — the grid no longer resizes itself to contain the vectors.
       style={{
         width: `${size.width * cellPx}px`,
         maxWidth: 'none',
         height: `${size.height * cellPx}px`,
+        overflow: 'visible',
         touchAction: 'none',
         userSelect: 'none',
         cursor: mode === 'lattice' ? 'crosshair' : 'cell',
@@ -326,6 +325,10 @@ export function TileGridCanvas({
         />
       )}
 
+      {/* Axes layer: drawn last so it sits over the cells, and only while the
+          flag is on. It is intentionally allowed to leave the grid — a generator
+          usually points outside the pattern, and clipping it would hide where it
+          goes. */}
       {mode === 'lattice' && (
         <g pointerEvents="none">
           {/* The repeat parallelogram: where one copy of the block lands. */}
@@ -333,8 +336,8 @@ export function TileGridCanvas({
             points={`${originPoint.x},${originPoint.y} ${liveUPoint.x},${liveUPoint.y} ${
               cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).x
             },${cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).y} ${liveVPoint.x},${liveVPoint.y}`}
-            fill="rgba(217,119,58,0.08)"
-            stroke="rgba(181,168,154,0.5)"
+            fill="rgba(217,119,58,0.1)"
+            stroke="rgba(181,168,154,0.6)"
             strokeWidth={1}
             strokeDasharray="4 4"
             vectorEffect="non-scaling-stroke"
@@ -353,14 +356,6 @@ export function TileGridCanvas({
           })}
           <LatticeArrow from={originPoint} to={liveUPoint} color="#d9773a" label="u" />
           <LatticeArrow from={originPoint} to={liveVPoint} color="#6f8f6a" label="v" />
-        </g>
-      )}
-
-      {mode !== 'lattice' && (
-        <g pointerEvents="none" opacity={0.5}>
-          <LatticeArrow from={originPoint} to={uPoint} color="#d9773a" label="u" />
-          <LatticeArrow from={originPoint} to={vPoint} color="#6f8f6a" label="v" />
-          <circle cx={sumPoint.x} cy={sumPoint.y} r={0.08} fill="rgba(181,168,154,0.6)" />
         </g>
       )}
 

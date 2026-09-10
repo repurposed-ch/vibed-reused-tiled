@@ -316,6 +316,131 @@ describe('fillPolygonWithTileSchema', () => {
     expect(cells.size).toBe(32);
   });
 
+  it('centres a tile in the cells it claims, splitting the joint', () => {
+    // Cell 0.15 with a 0.01 joint takes a 0.14 tile and a 0.29 tile: each sits
+    // half a joint in from its block, so neighbours are a full joint apart and
+    // the pattern edge keeps a half joint instead of none.
+    const jointCell = 0.15;
+    const joint = 0.01;
+    const small = createTileDefinition({ id: 's', name: 's', length: 0.14, width: 0.14 });
+    const big = createTileDefinition({ id: 'g', name: 'g', length: 0.29, width: 0.14 });
+
+    const grid = createTileGrid({
+      id: 'jointed',
+      name: 'Jointed',
+      cell: { x: jointCell, y: jointCell },
+      joint,
+      extent: { iCount: 2, jCount: 2 },
+      instances: [
+        instance('g0', 'g', 0, 0, 2, 1),
+        instance('s0', 's', 0, 1),
+        instance('s1', 's', 1, 1),
+      ],
+      fallbackTileDefinitionId: 's',
+    });
+    const master = createMasterGrid({
+      id: 'jm',
+      name: 'Jointed master',
+      childId: grid.id,
+      u: { i: 2, j: 0 },
+      v: { i: 0, j: 2 },
+    });
+    const schema = createTileSchema({
+      id: 'js',
+      name: 'Jointed schema',
+      tileGrids: [grid],
+      masterGrids: [master],
+      rootMasterGridId: master.id,
+    });
+
+    const result = fillPolygonWithTileSchema({
+      schema,
+      tiles: [small, big],
+      boundaries: rectBoundary(jointCell * 2, jointCell * 2),
+    });
+
+    const gOrigin = transformPointMat3(result.byTile.g![0]!, 0, 0);
+    expect(gOrigin.x).toBeCloseTo(joint / 2, 9);
+    expect(gOrigin.y).toBeCloseTo(joint / 2, 9);
+
+    // The unit tile above it clears the big tile's top edge by one full joint.
+    const sTop = result.byTile.s!.map((m) => transformPointMat3(m, 0, 0).y).sort((a, b) => a - b);
+    expect(sTop[0]).toBeCloseTo(jointCell + joint / 2, 9);
+    expect(sTop[0]! - (joint / 2 + big.width)).toBeCloseTo(joint, 9);
+  });
+
+  it('stands in a unit format when the declared fallback is larger than one cell', () => {
+    // A fallback is placed once per cell, so a multi-cell format would be drawn
+    // at its real size on a single cell and overlap every neighbour. Declaring
+    // the 3x3 a here is exactly that mistake.
+    const badFallback = { ...gridA3, id: 'bad', fallbackTileDefinitionId: 'a' };
+    const master = createMasterGrid({
+      id: 'bm',
+      name: 'Bad master',
+      childId: badFallback.id,
+      u: { i: 4, j: 0 },
+      v: { i: 0, j: 4 },
+    });
+    const schema = createTileSchema({
+      id: 'bs',
+      name: 'Bad fallback',
+      tileGrids: [badFallback],
+      masterGrids: [master],
+      rootMasterGridId: master.id,
+    });
+
+    // Two cells wide: the a never fits, so every cell goes to the fallback.
+    const result = fillPolygonWithTileSchema({
+      schema,
+      tiles,
+      boundaries: rectBoundary(CELL * 2, CELL * 4),
+    });
+
+    expect(result.stats.fallbackSubstitutedFor).toBe('a');
+    expect(result.stats.unfilled).toBe(0);
+    expect(byTileId(result.placements)).toEqual({ b: 8 });
+
+    const { cells, doubled } = coverage(result);
+    expect(doubled).toEqual([]);
+    expect(cells.size).toBe(8);
+  });
+
+  it('leaves cells bare rather than overlapping when no unit format exists', () => {
+    // Every format spans more than one cell, so there is nothing to break down
+    // to. Reporting the shortfall beats covering the boundary in overlaps.
+    const bigOnly = createTileGrid({
+      id: 'big',
+      name: 'Big only',
+      cell: { x: CELL, y: CELL },
+      extent: { iCount: 3, jCount: 3 },
+      instances: [instance('a0', 'a', 0, 0, 3, 3)],
+      fallbackTileDefinitionId: 'a',
+    });
+    const master = createMasterGrid({
+      id: 'gm',
+      name: 'Big master',
+      childId: bigOnly.id,
+      u: { i: 3, j: 0 },
+      v: { i: 0, j: 3 },
+    });
+    const schema = createTileSchema({
+      id: 'gs',
+      name: 'Big only',
+      tileGrids: [bigOnly],
+      masterGrids: [master],
+      rootMasterGridId: master.id,
+    });
+
+    const result = fillPolygonWithTileSchema({
+      schema,
+      tiles,
+      boundaries: rectBoundary(CELL * 2, CELL * 2),
+    });
+
+    expect(result.placements).toEqual([]);
+    expect(result.stats.unfilled).toBe(4);
+  });
+
   it('returns nothing when the boundary carries no usable geometry', () => {
     const result = fillPolygonWithTileSchema({
       schema: schemaFor(),

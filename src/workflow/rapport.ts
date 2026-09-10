@@ -222,7 +222,19 @@ export function findRapportModule(options: FindRapportOptions): RapportModule | 
 
   if (tiles.length === 0) return null;
 
-  const tileIds = tiles.map((t) => t.id);
+  // A share of zero means "do not use this format", and that has to be applied
+  // before anything else looks at the catalogue. `gridUnit` is a GCD over every
+  // tile it is handed, so an unwanted format still sets the cell size for the
+  // whole pattern — one 0.13 m tile at 0 % drags a 0.15 m unit down to 0.01 m
+  // and the search collapses. Filtering here rather than penalising later is
+  // what makes the sliders mean what they say.
+  const requested = tiles.filter((tile) => {
+    const target = targets.find((t) => t.tileDefinitionId === tile.id);
+    return Math.max(target?.areaShare ?? 0, 0) > 0;
+  });
+  if (requested.length === 0) return null;
+
+  const tileIds = requested.map((t) => t.id);
   const weights = tileIds.map((id) => {
     const target = targets.find((t) => t.tileDefinitionId === id);
     return Math.max(target?.areaShare ?? 0, 0);
@@ -231,9 +243,9 @@ export function findRapportModule(options: FindRapportOptions): RapportModule | 
   if (weightSum <= 0) return null;
   const targetFractions = weights.map((w) => w / weightSum);
 
-  const unit = gridUnit(tiles, unitResolution);
+  const unit = gridUnit(requested, unitResolution);
   const candidates: Candidate[] = [];
-  tiles.forEach((tile, index) => {
+  requested.forEach((tile, index) => {
     const lengthUnits = Math.round(tile.length / unit);
     const widthUnits = Math.round(tile.width / unit);
     candidates.push({ index, widthUnits: lengthUnits, heightUnits: widthUnits, rotated: false });

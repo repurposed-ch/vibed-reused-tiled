@@ -8,7 +8,7 @@ import {
   type Mat3Json,
 } from '@/domain/mat3';
 import type { TileDefinitionJson } from '@/domain/tile';
-import { toFrame2, type IntVec2, type TileSchemaJson } from '@/domain/tile-grid';
+import { spanFor, toFrame2, type IntVec2, type TileSchemaJson } from '@/domain/tile-grid';
 import { Epsilon } from '@/math/core/epsilon';
 import { Vec2 } from '@/math/core/vec2';
 import { Polygon2 } from '@/math/geometry/regions/polygon2';
@@ -44,6 +44,10 @@ export type TileGridFillStats = {
   wholeTiles: number;
   fallbackTiles: number;
   cutTiles: number;
+  /** Cells left bare because the schema offers no unit-sized format to break down to. */
+  unfilled: number;
+  /** Set when the declared fallback was not unit-sized and another format stood in. */
+  fallbackSubstitutedFor?: string;
   /** Tiles placed beyond the sampled stock, per tile definition. */
   shortfall: Record<string, number>;
 };
@@ -169,7 +173,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     return {
       placements: [],
       byTile: {},
-      stats: { cells: 0, wholeTiles: 0, fallbackTiles: 0, cutTiles: 0, shortfall: {} },
+      stats: { cells: 0, wholeTiles: 0, fallbackTiles: 0, cutTiles: 0, unfilled: 0, shortfall: {} },
     };
   }
 
@@ -315,19 +319,36 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     return (stock.get(tileId) ?? 0) - (used.get(tileId) ?? 0);
   };
 
+  /**
+   * Place a tile centred in the cells it claims.
+   *
+   * A cell is the tile plus its joint, so a tile anchored at the cell corner
+   * would push its whole joint onto one side and leave none at the pattern edge.
+   * Centring splits it, which puts half a joint against the boundary and a full
+   * joint between neighbours. Joints only line up across the pattern when every
+   * format shares one cell size — where they do not, they still read as joints,
+   * which is the normal outcome with mixed reclaimed formats.
+   */
   const emit = (
     tileId: string,
     cell: IntVec2,
     rotated: boolean,
     flip: Mirror,
+    span: { iSpan: number; jSpan: number },
     moduleId?: string,
   ): boolean => {
     const tile = tiles.get(tileId);
     if (!tile) return false;
+
+    const drawnWidth = rotated ? tile.width : tile.length;
+    const drawnHeight = rotated ? tile.length : tile.width;
+    const insetX = (span.iSpan * cellX - drawnWidth) / 2;
+    const insetY = (span.jSpan * cellY - drawnHeight) / 2;
+
     const mat3 = multiplyMat3(
       frameMat3,
       multiplyMat3(
-        translationMat3(cell.i * cellX, cell.j * cellY),
+        translationMat3(cell.i * cellX + insetX, cell.j * cellY + insetY),
         orientationMat3(tile, rotated, flip),
       ),
     );
@@ -337,10 +358,39 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     return true;
   };
 
-  const fallbackId = tileGrid.fallbackTileDefinitionId;
+  /**
+   * Breaking a clipped format down means putting one tile on each of its cells,
+   * so the fallback has to be a format that covers exactly one cell. A larger
+   * one would be drawn at its real size on a single cell and overlap every
+   * neighbour — the schema cannot express that constraint, so it is enforced
+   * here rather than trusted.
+   */
+  const coversOneCell = (tile: TileDefinitionJson): boolean => {
+    const span = spanFor(tile, tileGrid.cell, tileGrid.joint, false);
+    return span?.iSpan === 1 && span.jSpan === 1;
+  };
+
+  const declaredFallback = tiles.get(tileGrid.fallbackTileDefinitionId);
+  let fallbackId: string | null = null;
+  let fallbackSubstitutedFor: string | undefined;
+
+  if (declaredFallback && coversOneCell(declaredFallback)) {
+    fallbackId = declaredFallback.id;
+  } else {
+    // Stand in with a unit-sized format the pattern already uses, so a boundary
+    // still gets filled instead of being covered in overlapping tiles.
+    const used = [...new Set(tileGrid.instances.map((i) => i.tileDefinitionId))];
+    const substitute = used
+      .map((id) => tiles.get(id))
+      .find((tile): tile is TileDefinitionJson => tile != null && coversOneCell(tile));
+    fallbackId = substitute?.id ?? null;
+    if (declaredFallback) fallbackSubstitutedFor = declaredFallback.id;
+  }
+
   let wholeTiles = 0;
   let fallbackTiles = 0;
   let cutTiles = 0;
+  let unfilled = 0;
 
   for (const [key, occurrence] of occurrences) {
     const area = occurrence.iSpan * occurrence.jSpan;
@@ -348,7 +398,16 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     if (area === 1) {
       // A unit tile is placed wherever its cell touches the polygon; the ones the
       // boundary crosses are the cut tiles.
-      if (emit(occurrence.tileDefinitionId, occurrence.touched[0]!, occurrence.rotated, occurrence.flip, key)) {
+      if (
+        emit(
+          occurrence.tileDefinitionId,
+          occurrence.touched[0]!,
+          occurrence.rotated,
+          occurrence.flip,
+          { iSpan: 1, jSpan: 1 },
+          key,
+        )
+      ) {
         if (occurrence.containedCount === 0) cutTiles += 1;
         else wholeTiles += 1;
       }
@@ -359,7 +418,16 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     const inStock = remaining(occurrence.tileDefinitionId) >= 1;
 
     if (complete && inStock) {
-      if (emit(occurrence.tileDefinitionId, occurrence.originCell, occurrence.rotated, occurrence.flip, key)) {
+      if (
+        emit(
+          occurrence.tileDefinitionId,
+          occurrence.originCell,
+          occurrence.rotated,
+          occurrence.flip,
+          { iSpan: occurrence.iSpan, jSpan: occurrence.jSpan },
+          key,
+        )
+      ) {
         wholeTiles += 1;
         continue;
       }
@@ -367,8 +435,13 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
 
     // Clipped, or out of stock: the polygon still has to be filled, so every
     // touched cell of this occurrence takes a unit tile instead.
+    if (!fallbackId) {
+      unfilled += occurrence.touched.length;
+      continue;
+    }
     for (const cell of occurrence.touched) {
-      if (emit(fallbackId, cell, false, { x: false, y: false }, key)) fallbackTiles += 1;
+      if (emit(fallbackId, cell, false, { x: false, y: false }, { iSpan: 1, jSpan: 1 }, key))
+        fallbackTiles += 1;
     }
   }
 
@@ -383,6 +456,14 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   return {
     placements,
     byTile,
-    stats: { cells: cellCount, wholeTiles, fallbackTiles, cutTiles, shortfall },
+    stats: {
+      cells: cellCount,
+      wholeTiles,
+      fallbackTiles,
+      cutTiles,
+      unfilled,
+      ...(fallbackSubstitutedFor ? { fallbackSubstitutedFor } : {}),
+      shortfall,
+    },
   };
 }

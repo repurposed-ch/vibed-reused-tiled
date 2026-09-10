@@ -8,12 +8,13 @@ import type { IntVec2 } from '@/domain/tile-grid';
  * schema indexes cells from the bottom left) while SVG y runs down, so every
  * mapping below carries that inversion.
  *
- * The window is a bounding box, not a symmetric margin. A ring of `pad` cells
- * surrounds the extent so lattice vectors can be drawn outside the pattern —
- * which they must be, since a staircase repeat needs generators that leave the
- * pattern's own box — and the box is then stretched to contain the vector tips
- * and the repeat parallelogram. Growing it on one side never wastes space on the
- * other, and negative vectors need no special case.
+ * A ring of `pad` cells surrounds the extent so lattice vectors can be drawn
+ * outside the pattern — which they must be, since a staircase repeat needs
+ * generators that leave the pattern's own box. The ring is the interactive area
+ * and nothing else feeds the window: the vectors deliberately do *not* stretch
+ * it, because a long generator would otherwise shrink every cell to fit. The
+ * axes are drawn unclipped on top instead, so a vector reaching past the ring is
+ * still visible; growing the ring is what brings its tip back in reach.
  *
  * The window's origin goes into the viewBox and nowhere else, so `pad` cannot
  * desynchronise the drawing from the hit-testing.
@@ -32,15 +33,12 @@ export type CanvasWindow = {
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
-export function canvasWindow(extent: Extent, pad: number, u: IntVec2, v: IntVec2): CanvasWindow {
-  const sum: IntVec2 = { i: u.i + v.i, j: u.j + v.j };
-  const is = [-pad, 0, extent.iCount + pad, u.i, v.i, sum.i];
-  const js = [-pad, 0, extent.jCount + pad, u.j, v.j, sum.j];
+export function canvasWindow(extent: Extent, pad: number): CanvasWindow {
   return {
-    minI: Math.min(...is),
-    maxI: Math.max(...is),
-    minJ: Math.min(...js),
-    maxJ: Math.max(...js),
+    minI: -pad,
+    maxI: extent.iCount + pad,
+    minJ: -pad,
+    maxJ: extent.jCount + pad,
     jCount: extent.jCount,
   };
 }
