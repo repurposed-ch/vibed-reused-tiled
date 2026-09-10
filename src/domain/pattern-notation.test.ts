@@ -212,3 +212,80 @@ describe('pattern library', () => {
     expect(entries.every((p) => p.description.length > 0)).toBe(true);
   });
 });
+
+describe('replies as models actually write them', () => {
+  /** The reported failure: the stack-bond example echoed, then the real answer. */
+  const echoedExample = `cell 0.15
+u 1,0
+v 0,1
+b
+cell 0.15
+u 4,0
+v 0,4
+b b b b
+a a a b
+a a a b
+a a a b`;
+
+  it('keeps the last pattern when a reply restates an example first', () => {
+    const result = parsePattern(echoedExample, legend);
+    if (!result.ok) throw new Error(result.error);
+    // The answer, not the one-cell example it echoed.
+    expect(result.schema.tileGrids[0]!.extent).toEqual({ iCount: 4, jCount: 4 });
+    expect(tileGridCells(result.schema.tileGrids[0]!)).toHaveLength(16);
+  });
+
+  it('ignores prose around the grid', () => {
+    const result = parsePattern(
+      `Sure! Here is a pattern for you:
+
+cell 0.15
+u 4,0
+v 0,4
+b b b b
+a a a b
+a a a b
+a a a b
+
+Let me know if you would like a variation.`,
+      legend,
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(tileGridCells(result.schema.tileGrids[0]!)).toHaveLength(16);
+  });
+
+  it('ignores code fences wherever they appear', () => {
+    const result = parsePattern(
+      'Here you go:\n```text\ncell 0.15\nu 4,0\nv 0,4\nb b b b\na a a b\na a a b\na a a b\n```\nEnjoy.',
+      legend,
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(tileGridCells(result.schema.tileGrids[0]!)).toHaveLength(16);
+  });
+
+  it('accepts colon and equals header forms', () => {
+    const result = parsePattern(
+      `cell: 0.15
+u = 4,0
+v = 0,4
+b b b b
+a a a b
+a a a b
+a a a b`,
+      legend,
+    );
+    if (!result.ok) throw new Error(result.error);
+    expect(result.schema.masterGrids[0]!.u).toEqual({ i: 4, j: 0 });
+    expect(result.schema.masterGrids[0]!.v).toEqual({ i: 0, j: 4 });
+  });
+
+  it('reports a reply with no grid at all', () => {
+    const result = parsePattern(
+      'I am sorry, I cannot help with that request.',
+      legend,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/grid/i);
+  });
+});

@@ -41,6 +41,8 @@ export type UiState = {
   drawResolution: number;
   drawMode: 'outer' | 'hole';
   schemaPrompt: string;
+  /** Proposed or hand-written pattern notation, editable and re-appliable. */
+  schemaNotation: string;
   materialPrompt: string;
   /** Selected SDF node in the material graph editor, as a slot path key ('root', 'b.child'). */
   selectedSdfPath: string | null;
@@ -60,6 +62,7 @@ const DEFAULT_UI_STATE: UiState = {
   drawResolution: 0.25,
   drawMode: 'outer',
   schemaPrompt: 'A running bond of the large format with a course of units every fourth row.',
+  schemaNotation: '',
   materialPrompt: 'Worn terracotta with fine grain and subtle speckles, seamlessly tileable.',
   selectedSdfPath: null,
 };

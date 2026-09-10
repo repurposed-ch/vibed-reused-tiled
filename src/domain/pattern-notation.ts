@@ -73,30 +73,137 @@ export function patternLegend(tiles: readonly TileDefinitionJson[]): PatternLege
   }));
 }
 
+const FENCE = /^(?:```|~~~)/;
+const BLANK_TOKENS = new Set(['_', '.']);
+
+type Block = { headers: Map<string, string>; rows: string[][]; lineError?: string };
+
+type LineKind =
+  | { kind: 'row'; tokens: string[] }
+  | { kind: 'error'; message: string }
+  | { kind: 'prose' };
+
+/**
+ * Decide what a line is, by content rather than by position.
+ *
+ * Position was the original rule — headers were only recognised before the first
+ * grid row — so a model that restated an example before answering had the next
+ * `cell 0.15` swallowed as a two-wide row. That was the commonest failure by
+ * far, because the shortest example's whole grid is a single letter.
+ *
+ * A *spaced* line whose tokens are all single characters was meant as a grid
+ * row, so an unrecognised letter there is reported rather than quietly dropped.
+ * A line without spaces is only read as a packed row when every character is a
+ * known letter, which keeps ordinary prose ("Enjoy.") from being mistaken for
+ * one — at the cost of a spaceless word made entirely of legend letters ("cab"
+ * with three formats) still reading as a row. Spaced rows are what the prompt
+ * asks for; packed is a convenience.
+ */
+function classifyLine(line: string, letters: ReadonlySet<string>): LineKind {
+  const known = (token: string) =>
+    BLANK_TOKENS.has(token) || (token.length === 1 && letters.has(token.toLowerCase()));
+
+  if (/\s/.test(line)) {
+    const tokens = line.split(/\s+/).filter((t) => t.length > 0);
+    if (tokens.length === 0) return { kind: 'prose' };
+    // Prose has words; a grid row has single characters.
+    if (!tokens.every((token) => token.length === 1)) return { kind: 'prose' };
+    const stray = tokens.find((token) => !known(token));
+    if (stray) {
+      return {
+        kind: 'error',
+        message: `Unknown format "${stray}" at column ${tokens.indexOf(stray) + 1}.`,
+      };
+    }
+    return { kind: 'row', tokens };
+  }
+
+  const chars = line.split('');
+  if (chars.length > 0 && chars.every(known)) return { kind: 'row', tokens: chars };
+  return { kind: 'prose' };
+}
+
+/** `key value`, `key: value` and `key = value` all count; a bare key does not. */
+function asHeader(line: string): [string, string] | null {
+  const match = line.match(/^([A-Za-z]+)\s*[:=]?\s+(.*)$/) ?? line.match(/^([A-Za-z]+)\s*[:=]\s*(.*)$/);
+  if (!match) return null;
+  const key = match[1]!.toLowerCase();
+  const value = match[2]!.trim();
+  if (!(HEADER_KEYS as readonly string[]).includes(key) || value.length === 0) return null;
+  return [key, value];
+}
+
+/**
+ * Break a reply into pattern blocks. A `cell` header arriving after rows have
+ * started means a second pattern, which is what a reply that echoes an example
+ * looks like.
+ */
+function splitBlocks(text: string, letters: ReadonlySet<string>): Block[] {
+  const blocks: Block[] = [];
+  let current: Block = { headers: new Map(), rows: [] };
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.length === 0 || line.startsWith('#') || FENCE.test(line)) continue;
+
+    const header = asHeader(line);
+    if (header) {
+      if (header[0] === 'cell' && current.rows.length > 0) {
+        blocks.push(current);
+        current = { headers: new Map(), rows: [] };
+      }
+      current.headers.set(header[0], header[1]);
+      continue;
+    }
+
+    const classified = classifyLine(line, letters);
+    if (classified.kind === 'row') {
+      current.rows.push(classified.tokens);
+      continue;
+    }
+    if (classified.kind === 'error') {
+      current.lineError ??= classified.message;
+      continue;
+    }
+    // Anything else is prose, and prose is not an error.
+  }
+
+  blocks.push(current);
+  return blocks.filter(
+    (block) => block.rows.length > 0 || block.headers.size > 0 || block.lineError != null,
+  );
+}
+
 export function parsePattern(
   text: string,
   legend: readonly PatternLegendEntry[],
 ): ParsePatternResult {
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('#'));
-
-  const headers = new Map<string, string>();
-  const rows: string[][] = [];
-
-  for (const line of lines) {
-    const key = line.split(/\s+/)[0]?.toLowerCase() ?? '';
-    if ((HEADER_KEYS as readonly string[]).includes(key) && rows.length === 0) {
-      headers.set(key, line.slice(key.length).trim());
-      continue;
-    }
-    // Tokens may be spaced or packed: "a a a b" and "aaab" both work.
-    const tokens = line.includes(' ') ? line.split(/\s+/) : line.split('');
-    rows.push(tokens);
+  const letters = new Set(legend.map((entry) => entry.letter.toLowerCase()));
+  const blocks = splitBlocks(text, letters);
+  if (blocks.length === 0) {
+    return { ok: false, error: 'No grid rows found in the reply.' };
   }
 
-  if (rows.length === 0) return { ok: false, error: 'No grid rows found.' };
+  // Last first: when a reply restates an example and then answers, the answer is
+  // last. The error reported on total failure is the last block's, for the same
+  // reason — it is the most likely real attempt.
+  let lastError = 'No grid rows found in the reply.';
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const result = parseBlock(blocks[index]!, legend);
+    if (result.ok) return result;
+    if (index === blocks.length - 1) lastError = result.error;
+  }
+  return { ok: false, error: lastError };
+}
+
+function parseBlock(block: Block, legend: readonly PatternLegendEntry[]): ParsePatternResult {
+  const { headers, rows } = block;
+
+  // A line that was clearly meant as a grid row but carried an unknown letter is
+  // reported rather than skipped — dropping it would silently change the pattern.
+  if (block.lineError) return { ok: false, error: block.lineError };
+
+  if (rows.length === 0) return { ok: false, error: 'No grid rows found in the reply.' };
 
   const width = rows[0]!.length;
   const badRow = rows.findIndex((row) => row.length !== width);

@@ -120,6 +120,18 @@ export function patternLibrary(): LibraryPattern[] {
   ];
 }
 
+/** How many cells a pattern's grid draws, used to skip degenerate examples. */
+export function patternCellCount(pattern: LibraryPattern): number {
+  const body = pattern.notation
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^(name|cell|joint|u|v|mirror|fallback)\b/.test(line));
+  return body.reduce((total, line) => {
+    const tokens = /\s/.test(line) ? line.split(/\s+/) : line.split('');
+    return total + tokens.length;
+  }, 0);
+}
+
 /** Letters a pattern uses, so a catalogue can be checked against it. */
 export function patternLetters(pattern: LibraryPattern): string[] {
   const body = pattern.notation

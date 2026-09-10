@@ -7,6 +7,7 @@ import {
 } from '@/domain/project';
 import {
   NOMINAL_FOOTPRINTS,
+  patternCellCount,
   patternLetters,
   patternLibrary,
   patternWithCell,
@@ -301,11 +302,15 @@ function buildTileSchemaPrompt(
   cell: { x: number; y: number },
 ): string {
   const examples = patternsForLegend(legend, cell, 0)
+    // A one-cell grid teaches nothing, and its single-letter row is exactly what
+    // collides with the next block's header when a model echoes it back.
+    .filter((pattern) => patternCellCount(pattern) > 1)
     .slice(0, MAX_EXAMPLES)
     .map((pattern) => `# ${pattern.description}\n${patternWithCell(pattern, cell.x, cell.y)}`);
 
   return [
-    'You lay out reused tiles. Reply with ONLY a pattern in the grid notation below - no prose, no markdown fences.',
+    'You lay out reused tiles. Reply with ONLY a pattern in the grid notation below.',
+    'Emit exactly ONE pattern. Do not repeat the examples, do not explain, do not add markdown fences.',
     '',
     NOTATION_SPEC,
     '',
@@ -319,33 +324,90 @@ function buildTileSchemaPrompt(
   ].join('\n');
 }
 
-export async function assistTileSchema(args: {
-  provider: string;
-  model: string;
-  apiKey?: string;
-  request: TileSchemaAssistRequest;
-}): Promise<{ schema: TileSchemaJson; notation: string }> {
+export type TileSchemaAssistResult =
+  | { ok: true; schema: TileSchemaJson; notation: string }
+  | { ok: false; error: string; notation: string };
+
+/** Follow-up asking the model to fix what the parser rejected. */
+function buildRepairPrompt(previous: string, error: string): string {
+  return [
+    'That reply could not be read. The error was:',
+    error,
+    '',
+    'Send the corrected pattern only — headers then grid rows, one pattern, nothing else.',
+    '',
+    'Your previous reply was:',
+    previous,
+  ].join('\n');
+}
+
+/**
+ * The assist loop, with the transport injected so the retry can be tested.
+ *
+ * Returns a result rather than throwing, because the raw reply is worth keeping
+ * even when it will not parse: the page puts it in an editable box, so a
+ * near-miss is a small correction instead of a dead end.
+ */
+export async function assistTileSchemaWith(
+  callText: (prompt: string) => Promise<string>,
+  args: { request: TileSchemaAssistRequest },
+): Promise<TileSchemaAssistResult> {
   const tiles = args.request.tileDefinitions;
-  if (tiles.length === 0) throw new Error('LLM assist failed: define at least one tile first');
+  if (tiles.length === 0) {
+    return { ok: false, error: 'Define at least one tile first', notation: '' };
+  }
 
   const legend = patternLegend(tiles);
   // Smallest format sets the cell, the way a repeat is built by hand.
   const smallest = [...tiles].sort((a, b) => a.length * a.width - b.length * b.width)[0]!;
   const cell = { x: smallest.length, y: smallest.width };
 
-  const text = await callLlmText({
-    provider: args.provider,
-    model: args.model,
-    apiKey: args.apiKey,
-    prompt: buildTileSchemaPrompt(args.request, legend, cell),
-  });
+  let prompt = buildTileSchemaPrompt(args.request, legend, cell);
+  let notation = '';
+  let error = 'Assist failed';
 
-  const notation = stripCodeFences(text);
-  const parsed = parsePattern(notation, legend);
-  if (!parsed.ok) {
-    throw new Error(`LLM assist failed: ${parsed.error}`);
+  // One repair attempt. The models this app defaults to are small, and a single
+  // round of "here is what was wrong with that" turns a lot of near-misses into
+  // usable patterns; a second adds cost without much return.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let text: string;
+    try {
+      text = await callText(prompt);
+    } catch (cause) {
+      return {
+        ok: false,
+        error: cause instanceof Error ? cause.message : 'Assist failed',
+        notation,
+      };
+    }
+
+    notation = stripCodeFences(text);
+    const parsed = parsePattern(notation, legend);
+    if (parsed.ok) return { ok: true, schema: parsed.schema, notation };
+
+    error = parsed.error;
+    prompt = buildRepairPrompt(notation, parsed.error);
   }
-  return { schema: parsed.schema, notation };
+
+  return { ok: false, error, notation };
+}
+
+export function assistTileSchema(args: {
+  provider: string;
+  model: string;
+  apiKey?: string;
+  request: TileSchemaAssistRequest;
+}): Promise<TileSchemaAssistResult> {
+  return assistTileSchemaWith(
+    (prompt) =>
+      callLlmText({
+        provider: args.provider,
+        model: args.model,
+        apiKey: args.apiKey,
+        prompt,
+      }),
+    { request: args.request },
+  );
 }
 
 // Built from SDF_OPS so the op list cannot drift from the schema.

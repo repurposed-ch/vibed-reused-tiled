@@ -40,7 +40,7 @@ import { TileGridCanvas, type CellFill } from '@/render/svg/tile-grid-canvas';
 import { clampToExtent } from '@/render/svg/tile-grid-geometry';
 import { findRapportModule, rapportToTileSchema } from '@/workflow/rapport';
 import { patternWithCell, type LibraryPattern } from '@/domain/pattern-library';
-import { parsePattern, patternLegend } from '@/domain/pattern-notation';
+import { formatPattern, parsePattern, patternLegend } from '@/domain/pattern-notation';
 import { assistTileSchema, patternsForLegend } from '@/llm/assist';
 import { DEFAULT_LLM_PROVIDER_ID } from '@/llm/providers';
 import { fillPolygonWithTileSchema } from '@/workflow/tile-grid-fill';
@@ -259,7 +259,6 @@ export function TileSchemaPage() {
   const [rawError, setRawError] = useState<string | null>(null);
   const [assistBusy, setAssistBusy] = useState(false);
   const [assistError, setAssistError] = useState<string | null>(null);
-  const [assistNotation, setAssistNotation] = useState<string | null>(null);
 
   const tiles = project.tileDefinitions;
   const tileMap = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
@@ -461,6 +460,18 @@ export function TileSchemaPage() {
     setMessage(`Loaded ${pattern.name}.`);
   };
 
+  /** Parse whatever is in the notation box and adopt it. */
+  const applyNotation = (text: string) => {
+    const parsed = parsePattern(text, legend);
+    if (!parsed.ok) {
+      setAssistError(parsed.error);
+      return;
+    }
+    setAssistError(null);
+    setDraft(parsed.schema);
+    setSelectedLevelId(parsed.schema.tileGrids[0]?.id ?? null);
+  };
+
   const runAssist = async () => {
     setAssistBusy(true);
     setAssistError(null);
@@ -474,14 +485,20 @@ export function TileSchemaPage() {
           // Textures are stripped: a baked data URL runs to megabytes, says
           // nothing about where a tile goes, and would swamp a small model.
           tileDefinitions: tiles.map((t) => ({ ...t, texture: undefined })),
-          current: draft ? undefined : undefined,
+          current: ui.schemaNotation || undefined,
         },
       });
-      setAssistNotation(result.notation);
-      setDraft(result.schema);
-      setSelectedLevelId(result.schema.tileGrids[0]?.id ?? null);
-    } catch (error) {
-      setAssistError(error instanceof Error ? error.message : 'Assist failed');
+      // Keep the raw reply so a near-miss can be corrected in the box rather
+      // than thrown away with the error — but only when there *is* one. A
+      // transport failure carries no notation, and writing that over the box
+      // would destroy whatever had been typed there.
+      if (result.notation) patchUi({ schemaNotation: result.notation });
+      if (result.ok) {
+        setDraft(result.schema);
+        setSelectedLevelId(result.schema.tileGrids[0]?.id ?? null);
+      } else {
+        setAssistError(result.error);
+      }
     } finally {
       setAssistBusy(false);
     }
@@ -1189,11 +1206,35 @@ export function TileSchemaPage() {
           ))}
         </div>
         {assistError && <p className="error" style={{ marginTop: '0.75rem' }}>{assistError}</p>}
-        {assistNotation && (
-          <pre className="mono" style={{ marginTop: '0.75rem', whiteSpace: 'pre-wrap' }}>
-            {assistNotation}
-          </pre>
-        )}
+        <div className="field" style={{ marginTop: '0.75rem' }}>
+          <label>Pattern notation</label>
+          <textarea
+            className="mono"
+            rows={10}
+            spellCheck={false}
+            placeholder={'cell 0.15\nu 4,0\nv 0,4\nb b b b\na a a b\na a a b\na a a b'}
+            value={ui.schemaNotation}
+            onChange={(e) => patchUi({ schemaNotation: e.target.value })}
+          />
+        </div>
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => applyNotation(ui.schemaNotation)}
+            disabled={!ui.schemaNotation.trim()}
+          >
+            Apply notation
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => draft && patchUi({ schemaNotation: formatPattern(draft, legend) })}
+            disabled={!draft}
+          >
+            Read from current
+          </button>
+        </div>
       </section>
 
       <section className="panel no-print">
