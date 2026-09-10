@@ -37,7 +37,8 @@ body {
 }
 
 .app-shell {
-  min-height: 100dvh;
+  min-height: 100vh;
+  min-height: 100svh;
   display: grid;
   grid-template-rows: auto 1fr;
   max-width: 100%;
@@ -239,7 +240,8 @@ textarea {
   right: 0;
   z-index: 120;
   width: min(20rem, 100vw);
-  height: 100dvh;
+  height: 100vh;
+  height: 100svh;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -567,7 +569,8 @@ pre {
 .view3d-fullscreen {
   position: relative;
   z-index: 0;
-  height: calc(100dvh - var(--header-height) - env(safe-area-inset-top, 0px));
+  height: calc(100vh - var(--header-height) - env(safe-area-inset-top, 0px));
+  height: calc(100svh - var(--header-height) - env(safe-area-inset-top, 0px));
   width: 100%;
   max-width: 100%;
   background: var(--bg0);
