@@ -10,14 +10,16 @@ import { assistDesignFamily } from '@/llm/assist';
 import { getProvider, providerRequiresApiKey } from '@/llm/providers';
 import { ModulePreviewSvg } from '@/render/svg/module-preview';
 import { useProject } from '../project-context';
+import { useUiState } from '../ui-state';
 
 export function DesignFamilyPage() {
   const { project, setDesignFamily, llmSettings } = useProject();
   const family = project.designFamily;
   const [activeModuleId, setActiveModuleId] = useState(family.modules[0]?.id ?? '');
-  const [prompt, setPrompt] = useState(
-    'Create a simple running bond module using the available tiles, alternating materials when possible.',
-  );
+  const { ui, patchUi } = useUiState();
+  // An unaccepted proposal is real API spend; losing it on navigation was costly.
+  const prompt = ui.familyPrompt;
+  const setPrompt = (next: string) => patchUi({ familyPrompt: next });
   const [proposal, setProposal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

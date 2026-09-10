@@ -2,11 +2,17 @@ import { mulberry32, sampleStock } from '@/workflow/sample-stock';
 import { solveLayout } from '@/workflow/solve-layout';
 import { useState } from 'react';
 import { useProject } from '../project-context';
+import { useUiState } from '../ui-state';
 
 export function SolvePage() {
   const { project, setInstance } = useProject();
-  const [seed, setSeed] = useState(42);
-  const [variants, setVariants] = useState<number[]>([]);
+  const { ui, patchUi, solveStatus } = useUiState();
+  // Seed and variants persist: they are choices, and losing them on navigation
+  // meant a re-run silently used 42 rather than what was typed.
+  const seed = ui.seed;
+  const setSeed = (next: number) => patchUi({ seed: next });
+  const variants = ui.variants;
+  const setVariants = (next: number[]) => patchUi({ variants: next });
   const [message, setMessage] = useState<string | null>(null);
 
   const run = (nextSeed: number) => {
@@ -17,6 +23,7 @@ export function SolvePage() {
       boundaries: project.boundaries,
       sampledStock: sampled,
       seed: nextSeed,
+      tileSchema: project.tileSchema,
     });
     setInstance(instance);
     setMessage(
@@ -32,8 +39,16 @@ export function SolvePage() {
       <h1>Solve</h1>
       <p className="lede">
         Sample stock from distributions, place primary modules inside the boundary, then greedily
-        fill leftovers with soft constraints.
+        fill leftovers with soft constraints. This runs automatically after every edit; the controls
+        below are for re-rolling a seed deliberately.
       </p>
+
+      {solveStatus.kind === 'solving' && (
+        <p className="muted">Solving…</p>
+      )}
+      {solveStatus.kind === 'error' && (
+        <p className="error">Automatic solve is not running: {solveStatus.reason}</p>
+      )}
 
       <section className="panel no-print">
         <div className="row">
@@ -78,7 +93,7 @@ export function SolvePage() {
 
       <section className="panel">
         <h2>Instance</h2>
-        {!project.instance && <p className="muted">No instance yet — run solve.</p>}
+        {!project.instance && <p className="muted">No instance yet.</p>}
         {project.instance && (
           <>
             <p className="mono muted">

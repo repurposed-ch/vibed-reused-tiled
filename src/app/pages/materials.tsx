@@ -10,6 +10,7 @@ import { bakeMaterialTexture } from '@/render/materials';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProject } from '../project-context';
+import { useUiState } from '../ui-state';
 
 function MaterialPreview({
   material,
@@ -67,9 +68,9 @@ export function MaterialsPage() {
   );
   const [sdfText, setSdfText] = useState('');
   const [sdfError, setSdfError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState(
-    'Worn terracotta with fine grain and subtle speckles, seamlessly tileable.',
-  );
+  const { ui, patchUi } = useUiState();
+  const prompt = ui.materialPrompt;
+  const setPrompt = (next: string) => patchUi({ materialPrompt: next });
   const [busy, setBusy] = useState(false);
   const [assistError, setAssistError] = useState<string | null>(null);
 

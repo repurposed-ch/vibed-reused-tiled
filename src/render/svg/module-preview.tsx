@@ -1,4 +1,4 @@
-import { mat3ToSvgMatrix } from '@/domain/mat3';
+import { mat3ToSvgMatrix, placementAabb } from '@/domain/mat3';
 import { tileDisplayColor, type TileDefinitionJson } from '@/domain/tile';
 import type { DesignModuleJson } from '@/domain/design-family';
 
@@ -17,25 +17,28 @@ export function ModulePreviewSvg({
   for (const pl of module.placements) {
     const t = tileMap.get(pl.tileDefinitionId);
     if (!t) continue;
-    const x = (pl.localMat3.elements[6] ?? 0) + t.length;
-    const y = (pl.localMat3.elements[7] ?? 0) + t.width;
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
+    // Transformed corners, so rotated and mirrored placements stay in frame.
+    const aabb = placementAabb(pl.localMat3, t);
+    maxX = Math.max(maxX, aabb.maxX);
+    maxY = Math.max(maxY, aabb.maxY);
   }
 
   const pad = 0.1;
   const vbW = maxX + pad * 2;
   const vbH = maxY + pad * 2;
+  // World +Y up (CAD convention); see instance-svg.
+  const vbY = -maxY - pad;
 
   return (
     <svg
       className="fluid-svg"
-      viewBox={`${-pad} ${-pad} ${vbW} ${vbH}`}
+      viewBox={`${-pad} ${vbY} ${vbW} ${vbH}`}
       preserveAspectRatio="xMidYMid meet"
       style={{ aspectRatio: `${vbW} / ${vbH}` }}
       role="img"
       aria-label="Module preview"
     >
+      <g transform="scale(1,-1)">
       {module.placements.map((pl) => {
         const t = tileMap.get(pl.tileDefinitionId);
         if (!t) return null;
@@ -53,6 +56,7 @@ export function ModulePreviewSvg({
           </g>
         );
       })}
+      </g>
     </svg>
   );
 }

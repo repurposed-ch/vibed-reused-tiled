@@ -21,6 +21,13 @@ function asVerts(geom: Record<string, unknown>): Vec[] {
   return [];
 }
 
+/**
+ * Boundary geometry in world coordinates.
+ *
+ * Drawn inside a `scale(1,-1)` group so world +Y runs up the screen (CAD
+ * convention). Callers own that flip and the matching viewBox; anything with
+ * glyphs in here has to counter-flip itself or it renders mirrored.
+ */
 export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJson }) {
   return (
     <g>
@@ -62,7 +69,13 @@ export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJs
                 strokeWidth={0.04}
                 strokeDasharray="0.08 0.06"
               />
-              <text x={from.x} y={from.y - 0.08} fill="#6f8f6a" fontSize={0.12}>
+              {/* Counter-flip so the label reads upright inside the flipped group.
+                  +0.08 now sits above the line, since +Y is up. */}
+              <text
+                transform={`translate(${from.x} ${from.y + 0.08}) scale(1,-1)`}
+                fill="#6f8f6a"
+                fontSize={0.12}
+              >
                 {guide.name}
               </text>
             </g>
@@ -96,7 +109,8 @@ export function BoundarySvg({
   const pad = 0.2;
   const vbW = maxX - minX + pad * 2;
   const vbH = maxY - minY + pad * 2;
-  const vb = `${minX - pad} ${minY - pad} ${vbW} ${vbH}`;
+  // Flipped content spans svg y in [-maxY, -minY], so the viewBox starts at -maxY.
+  const vb = `${minX - pad} ${-maxY - pad} ${vbW} ${vbH}`;
 
   return (
     <svg
@@ -107,7 +121,9 @@ export function BoundarySvg({
       role="img"
       aria-label="Boundary preview"
     >
-      <BoundaryPaths boundaries={boundaries} />
+      <g transform="scale(1,-1)">
+        <BoundaryPaths boundaries={boundaries} />
+      </g>
     </svg>
   );
 }
