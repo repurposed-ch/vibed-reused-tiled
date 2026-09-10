@@ -7,7 +7,6 @@ import { OverviewPage } from './pages/overview';
 import { TilesPage } from './pages/tiles';
 import { MaterialsPage } from './pages/materials';
 import { StockPage } from './pages/stock';
-import { DesignFamilyPage } from './pages/design-family';
 import { BoundariesPage } from './pages/boundaries';
 import { TileSchemaPage } from './pages/tile-schema';
 import { SolvePage } from './pages/solve';
@@ -29,7 +28,6 @@ export function App() {
             <Route path="tiles" element={<TilesPage />} />
             <Route path="materials" element={<MaterialsPage />} />
             <Route path="stock" element={<StockPage />} />
-            <Route path="design-family" element={<DesignFamilyPage />} />
             <Route path="tile-schema" element={<TileSchemaPage />} />
             <Route path="boundaries" element={<BoundariesPage />} />
             <Route path="solve" element={<SolvePage />} />

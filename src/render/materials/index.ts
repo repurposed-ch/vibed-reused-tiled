@@ -26,8 +26,37 @@ export {
   worstSeverity,
   type SeamIssue,
   type SeamSeverity,
+  type SdfSlotKey,
   type TileSize,
 } from './seamlessness';
+export {
+  CATEGORY_LABEL,
+  CATEGORY_ORDER,
+  OP_META,
+  opsInCategory,
+  thumbnailNode,
+  type OpMeta,
+  type ParamMeta,
+  type SdfCategory,
+  type SdfSlot,
+} from './op-meta';
+export {
+  changeOp,
+  changeOpAt,
+  defaultNodeForOp,
+  getNodeAt,
+  listNodes,
+  paramSummary,
+  pathFromKey,
+  pathKey,
+  pathsEqual,
+  replaceNodeAt,
+  setParamAt,
+  unwrapNodeAt,
+  wrapNodeAt,
+  type SdfPath,
+  type TreeEntry,
+} from './sdf-edit';
 export {
   bakeInputFromTile,
   clearTextureCache,

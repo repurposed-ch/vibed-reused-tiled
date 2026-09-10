@@ -1,13 +1,23 @@
 import {
-  DesignFamilyJsonSchema,
   MaterialDefinitionJsonSchema,
   SDF_OPS,
-  type DesignFamilyJson,
   type MaterialDefinitionJson,
-  type StockStateJson,
   type TileDefinitionJson,
+  type TileSchemaJson,
 } from '@/domain/project';
-import { coerceMat3Json } from '@/domain/mat3';
+import {
+  NOMINAL_FOOTPRINTS,
+  patternLetters,
+  patternLibrary,
+  patternWithCell,
+  type LibraryPattern,
+} from '@/domain/pattern-library';
+import {
+  parsePattern,
+  patternLegend,
+  type PatternLegendEntry,
+} from '@/domain/pattern-notation';
+import { spanFor } from '@/domain/tile-grid';
 import {
   getProvider,
   providerRequiresApiKey,
@@ -19,145 +29,10 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const RETRYABLE_STATUS = new Set([429, 503]);
 const MAX_ATTEMPTS = 3;
 
-export type LlmAssistRequest = {
-  prompt: string;
-  tileDefinitions: TileDefinitionJson[];
-  stock?: StockStateJson;
-  currentFamily?: DesignFamilyJson;
-};
-
-const SCHEMA_HINT = `{
-  "type": "DesignFamily",
-  "id": "string",
-  "name": "string",
-  "modules": [
-    {
-      "type": "DesignModule",
-      "id": "string",
-      "name": "string",
-      "placements": [
-        {
-          "id": "string",
-          "tileDefinitionId": "string (must match an available tile id)",
-          "localMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, "x", "y", 1] },
-          "role": "optional string"
-        }
-      ],
-      "children": [
-        {
-          "moduleId": "string",
-          "localMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, 0, 0, 1] }
-        }
-      ],
-      "repeat": {
-        "count": 2,
-        "offsetMat3": { "type": "Mat3", "elements": [1, 0, 0, 0, 1, 0, "dx", "dy", 1] }
-      },
-      "anchor": "origin" | "centroid" | "bboxMin"
-    }
-  ],
-  "primaryModuleIds": ["module id"],
-  "constraints": [
-    {
-      "id": "string",
-      "kind": "rhythmMatch" | "adjacencyPrefer" | "materialAlternate" | "gapTolerance",
-      "weight": 1,
-      "params": {}
-    }
-  ]
-}`;
-
-function unwrapFamily(data: unknown): unknown {
-  if (typeof data !== 'object' || data === null) return data;
-  const obj = data as Record<string, unknown>;
-  if (obj.type === 'DesignFamily') return obj;
-  if (obj.family) return obj.family;
-  if (obj.designFamily) return obj.designFamily;
-  if (typeof obj.content === 'string') {
-    try {
-      return unwrapFamily(JSON.parse(obj.content) as unknown);
-    } catch {
-      return data;
-    }
-  }
-  return data;
-}
-
-/** Coerce bare Mat3 arrays inside a DesignFamily-shaped object. */
-function normalizeFamilyMat3s(data: unknown): unknown {
-  if (typeof data !== 'object' || data === null) return data;
-  const family = data as Record<string, unknown>;
-  const modules = family.modules;
-  if (!Array.isArray(modules)) return data;
-
-  return {
-    ...family,
-    modules: modules.map((mod) => {
-      if (typeof mod !== 'object' || mod === null) return mod;
-      const m = mod as Record<string, unknown>;
-      const placements = Array.isArray(m.placements)
-        ? m.placements.map((pl) => {
-            if (typeof pl !== 'object' || pl === null) return pl;
-            const p = pl as Record<string, unknown>;
-            return { ...p, localMat3: coerceMat3Json(p.localMat3) };
-          })
-        : m.placements;
-      const children = Array.isArray(m.children)
-        ? m.children.map((ch) => {
-            if (typeof ch !== 'object' || ch === null) return ch;
-            const c = ch as Record<string, unknown>;
-            return { ...c, localMat3: coerceMat3Json(c.localMat3) };
-          })
-        : m.children;
-      let repeat = m.repeat;
-      if (typeof repeat === 'object' && repeat !== null) {
-        const r = repeat as Record<string, unknown>;
-        repeat = { ...r, offsetMat3: coerceMat3Json(r.offsetMat3) };
-      }
-      return { ...m, placements, children, repeat };
-    }),
-  };
-}
-
 function stripCodeFences(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return fenced ? fenced[1].trim() : trimmed;
-}
-
-function buildUserPrompt(request: LlmAssistRequest): string {
-  const parts = [
-    'You are assisting a reused-tile design tool.',
-    'Return ONLY a single DesignFamily JSON object matching this schema (no markdown, no commentary):',
-    SCHEMA_HINT,
-    '',
-    'Designer request:',
-    request.prompt.trim(),
-    '',
-    'Available tile definitions (JSON):',
-    JSON.stringify(request.tileDefinitions),
-  ];
-  if (request.stock) {
-    parts.push('', 'Stock hints (JSON):', JSON.stringify(request.stock));
-  }
-  if (request.currentFamily) {
-    parts.push('', 'Current design family to revise (JSON):', JSON.stringify(request.currentFamily));
-  }
-  parts.push(
-    '',
-    'Rules: use only tileDefinitionId values from the tile definitions; every Mat3 must be {"type":"Mat3","elements":[9 numbers]} (column-major; translation in elements[6] and elements[7]); invent new uuids for new ids.',
-  );
-  return parts.join('\n');
-}
-
-function parseFamilyJson(text: string): DesignFamilyJson {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripCodeFences(text)) as unknown;
-  } catch {
-    throw new Error('LLM assist failed: model reply was not valid JSON');
-  }
-  return DesignFamilyJsonSchema.parse(normalizeFamilyMat3s(unwrapFamily(parsed)));
 }
 
 function extractGeminiText(json: unknown): string {
@@ -357,19 +232,120 @@ async function callLlmText(args: {
   return callOpenAiChatCompletions({ provider, apiKey, model, prompt: args.prompt });
 }
 
-export async function assistDesignFamily(args: {
+export type TileSchemaAssistRequest = {
+  prompt: string;
+  tileDefinitions: TileDefinitionJson[];
+  /** Pattern in notation form, when revising rather than starting fresh. */
+  current?: string;
+};
+
+/**
+ * How many worked examples to send. Several configured providers are small
+ * models — a 2.6B, a 7B, `gemma-3-4b-it` — with no context metadata anywhere in
+ * the provider list, so the prompt is kept deliberately lean.
+ */
+const MAX_EXAMPLES = 3;
+
+const NOTATION_SPEC = `Grid notation:
+- One letter per format, one row per course. "_" is a cell covered by a neighbouring copy of the repeat.
+- Rows read top-down, so the FIRST row is the top of the pattern.
+- An UPPERCASE letter means that format turned 90 degrees.
+- A format always covers its own footprint in cells; draw the whole block with the same letter.
+- Header lines before the grid: "cell <m>", optional "joint <m>", "u <i>,<j>", "v <i>,<j>", optional "mirror x|y|xy".
+- u and v are the repeat vectors in cells, counted from the bottom-left. They may point outside the drawing.
+- The drawn cells must exactly fill one repeat: |u.i*v.j - u.j*v.i| must equal the number of drawn cells.`;
+
+/** Legend line per format, including the footprint so the model need not derive it. */
+function legendLines(
+  legend: readonly PatternLegendEntry[],
+  cell: { x: number; y: number },
+  joint: number,
+): string[] {
+  return legend.map((entry) => {
+    const upright = spanFor(entry.tile, cell, joint, false);
+    const turned = spanFor(entry.tile, cell, joint, true);
+    const shapes = [
+      upright ? `${entry.letter} = ${upright.iSpan}x${upright.jSpan} cells` : null,
+      turned && (turned.iSpan !== upright?.iSpan || turned.jSpan !== upright?.jSpan)
+        ? `${entry.letter.toUpperCase()} = ${turned.iSpan}x${turned.jSpan} cells`
+        : null,
+    ].filter(Boolean);
+    return `${entry.tile.name} (${entry.tile.length}x${entry.tile.width} m): ${shapes.join(', ') || 'does not fit the cell'}`;
+  });
+}
+
+/** Library entries this catalogue can actually build, by footprint. */
+export function patternsForLegend(
+  legend: readonly PatternLegendEntry[],
+  cell: { x: number; y: number },
+  joint: number,
+): LibraryPattern[] {
+  const available = new Map(
+    legend.map((entry) => {
+      const upright = spanFor(entry.tile, cell, joint, false);
+      return [entry.letter, upright];
+    }),
+  );
+  return patternLibrary().filter((pattern) =>
+    patternLetters(pattern).every((letter) => {
+      const want = NOMINAL_FOOTPRINTS[letter];
+      const have = available.get(letter);
+      return want != null && have != null && have.iSpan === want.iSpan && have.jSpan === want.jSpan;
+    }),
+  );
+}
+
+function buildTileSchemaPrompt(
+  request: TileSchemaAssistRequest,
+  legend: readonly PatternLegendEntry[],
+  cell: { x: number; y: number },
+): string {
+  const examples = patternsForLegend(legend, cell, 0)
+    .slice(0, MAX_EXAMPLES)
+    .map((pattern) => `# ${pattern.description}\n${patternWithCell(pattern, cell.x, cell.y)}`);
+
+  return [
+    'You lay out reused tiles. Reply with ONLY a pattern in the grid notation below - no prose, no markdown fences.',
+    '',
+    NOTATION_SPEC,
+    '',
+    'Formats available (use these letters):',
+    ...legendLines(legend, cell, 0),
+    '',
+    ...(examples.length > 0 ? ['Worked examples:', '', ...examples, ''] : []),
+    ...(request.current ? ['Pattern to revise:', request.current, ''] : []),
+    'Request:',
+    request.prompt.trim(),
+  ].join('\n');
+}
+
+export async function assistTileSchema(args: {
   provider: string;
   model: string;
   apiKey?: string;
-  request: LlmAssistRequest;
-}): Promise<DesignFamilyJson> {
+  request: TileSchemaAssistRequest;
+}): Promise<{ schema: TileSchemaJson; notation: string }> {
+  const tiles = args.request.tileDefinitions;
+  if (tiles.length === 0) throw new Error('LLM assist failed: define at least one tile first');
+
+  const legend = patternLegend(tiles);
+  // Smallest format sets the cell, the way a repeat is built by hand.
+  const smallest = [...tiles].sort((a, b) => a.length * a.width - b.length * b.width)[0]!;
+  const cell = { x: smallest.length, y: smallest.width };
+
   const text = await callLlmText({
     provider: args.provider,
     model: args.model,
     apiKey: args.apiKey,
-    prompt: buildUserPrompt(args.request),
+    prompt: buildTileSchemaPrompt(args.request, legend, cell),
   });
-  return parseFamilyJson(text);
+
+  const notation = stripCodeFences(text);
+  const parsed = parsePattern(notation, legend);
+  if (!parsed.ok) {
+    throw new Error(`LLM assist failed: ${parsed.error}`);
+  }
+  return { schema: parsed.schema, notation };
 }
 
 // Built from SDF_OPS so the op list cannot drift from the schema.

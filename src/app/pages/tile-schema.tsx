@@ -39,8 +39,12 @@ import { InstanceSvg } from '@/render/svg/instance-svg';
 import { TileGridCanvas, type CellFill } from '@/render/svg/tile-grid-canvas';
 import { clampToExtent } from '@/render/svg/tile-grid-geometry';
 import { findRapportModule, rapportToTileSchema } from '@/workflow/rapport';
+import { patternWithCell, type LibraryPattern } from '@/domain/pattern-library';
+import { parsePattern, patternLegend } from '@/domain/pattern-notation';
+import { assistTileSchema, patternsForLegend } from '@/llm/assist';
+import { DEFAULT_LLM_PROVIDER_ID } from '@/llm/providers';
 import { fillPolygonWithTileSchema } from '@/workflow/tile-grid-fill';
-import { tryResolveSchema, validateLattice } from '@/workflow/tile-grid-lattice';
+import { mirrorAllowed, tryResolveSchema, validateLattice } from '@/workflow/tile-grid-lattice';
 
 /**
  * Authoring surface for the tile schema: draw one repeat unit, set the lattice
@@ -229,7 +233,7 @@ function previewBoundary(grid: TileGridJson, u: IntVec2, v: IntVec2): BoundaryCo
 }
 
 export function TileSchemaPage() {
-  const { project, setTileSchema } = useProject();
+  const { project, setTileSchema, llmSettings } = useProject();
   const { ui, patchUi } = useUiState();
 
   // Everything the user authors here lives in the persisted UI state, not in
@@ -253,6 +257,9 @@ export function TileSchemaPage() {
   const setRaw = (next: string | null) => patchUi({ schemaRaw: next });
   const [message, setMessage] = useState<string | null>(null);
   const [rawError, setRawError] = useState<string | null>(null);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [assistNotation, setAssistNotation] = useState<string | null>(null);
 
   const tiles = project.tileDefinitions;
   const tileMap = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
@@ -327,6 +334,27 @@ export function TileSchemaPage() {
         : null;
     if (!cells) return null;
     return validateLattice(cells, activeMaster.u, activeMaster.v);
+  }, [draft, activeMaster]);
+
+  // Mirroring reflects the repeat inside its extent, so it only works when the
+  // claimed cells are symmetric across that axis — otherwise the reflection
+  // moves cells and the cover collapses. Checked per axis, and reported here
+  // rather than left to surface as a generic "does not tile".
+  const mirrorable = useMemo(() => {
+    if (!draft || !activeMaster) return { x: true, y: true };
+    const childGrid = findTileGrid(draft, activeMaster.childId);
+    const childMaster = findMasterGrid(draft, activeMaster.childId);
+    const cells = childGrid
+      ? tileGridCells(childGrid)
+      : childMaster?.extent
+        ? extentCells(childMaster.extent)
+        : null;
+    const extent = childGrid?.extent ?? childMaster?.extent;
+    if (!cells || !extent) return { x: true, y: true };
+    return {
+      x: mirrorAllowed(cells, extent, 'x'),
+      y: mirrorAllowed(cells, extent, 'y'),
+    };
   }, [draft, activeMaster]);
 
   const preview = useMemo(() => {
@@ -404,6 +432,59 @@ export function TileSchemaPage() {
     setMessage(
       `Found a ${module.widthUnits}×${module.heightUnits} repeat at ${module.unit.toFixed(3)} m cells, ${module.deviation.toFixed(1)} pts off the requested shares.`,
     );
+  };
+
+  // The smallest format sets the cell, the way a repeat is built by hand.
+  const smallestTile = useMemo(
+    () => [...tiles].sort((a, b) => a.length * a.width - b.length * b.width)[0],
+    [tiles],
+  );
+  const presetCell = smallestTile
+    ? { x: smallestTile.length, y: smallestTile.width }
+    : { x: 0.15, y: 0.15 };
+  const legend = useMemo(() => patternLegend(tiles), [tiles]);
+  // Only the library entries this catalogue can actually build: a pattern's
+  // drawing encodes footprints, so one needing a 2:1 slab is no use without one.
+  const presets = useMemo(
+    () => patternsForLegend(legend, presetCell, 0),
+    [legend, presetCell.x, presetCell.y],
+  );
+
+  const applyPreset = (pattern: LibraryPattern) => {
+    const parsed = parsePattern(patternWithCell(pattern, presetCell.x, presetCell.y), legend);
+    if (!parsed.ok) {
+      setMessage(`${pattern.name}: ${parsed.error}`);
+      return;
+    }
+    setDraft(parsed.schema);
+    setSelectedLevelId(parsed.schema.tileGrids[0]?.id ?? null);
+    setMessage(`Loaded ${pattern.name}.`);
+  };
+
+  const runAssist = async () => {
+    setAssistBusy(true);
+    setAssistError(null);
+    try {
+      const result = await assistTileSchema({
+        provider: llmSettings.provider || DEFAULT_LLM_PROVIDER_ID,
+        model: llmSettings.model,
+        apiKey: llmSettings.apiKey || undefined,
+        request: {
+          prompt: ui.schemaPrompt,
+          // Textures are stripped: a baked data URL runs to megabytes, says
+          // nothing about where a tile goes, and would swamp a small model.
+          tileDefinitions: tiles.map((t) => ({ ...t, texture: undefined })),
+          current: draft ? undefined : undefined,
+        },
+      });
+      setAssistNotation(result.notation);
+      setDraft(result.schema);
+      setSelectedLevelId(result.schema.tileGrids[0]?.id ?? null);
+    } catch (error) {
+      setAssistError(error instanceof Error ? error.message : 'Assist failed');
+    } finally {
+      setAssistBusy(false);
+    }
   };
 
   const paintTile: TileDefinitionJson | undefined = tileMap.get(paintTileId);
@@ -534,6 +615,26 @@ export function TileSchemaPage() {
               Seed from rapport
             </button>
           </div>
+          {presets.length > 0 && (
+            <>
+              <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>
+                Start from a known bond
+              </h3>
+              <div className="row" style={{ marginTop: '0.5rem' }}>
+                {presets.map((pattern) => (
+                  <button
+                    key={pattern.id}
+                    type="button"
+                    className="btn"
+                    title={pattern.description}
+                    onClick={() => applyPreset(pattern)}
+                  >
+                    {pattern.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           {tiles.length === 0 && (
             <p className="error" style={{ marginTop: '0.75rem' }}>
               Define at least one tile first.
@@ -816,6 +917,7 @@ export function TileSchemaPage() {
                   <label>Mirror x</label>
                   <select
                     value={activeMaster.mirror.x}
+                    disabled={!mirrorable.x}
                     onChange={(e) =>
                       patchMaster(activeMaster.id, {
                         mirror: { ...activeMaster.mirror, x: e.target.value as MirrorRule },
@@ -830,6 +932,7 @@ export function TileSchemaPage() {
                   <label>Mirror y</label>
                   <select
                     value={activeMaster.mirror.y}
+                    disabled={!mirrorable.y}
                     onChange={(e) =>
                       patchMaster(activeMaster.id, {
                         mirror: { ...activeMaster.mirror, y: e.target.value as MirrorRule },
@@ -841,6 +944,16 @@ export function TileSchemaPage() {
                   </select>
                 </div>
               </div>
+
+              {(!mirrorable.x || !mirrorable.y) && (
+                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                  Mirroring is unavailable in{' '}
+                  {!mirrorable.x && !mirrorable.y ? 'x and y' : !mirrorable.x ? 'x' : 'y'}: the
+                  repeat is not symmetric across that axis, so reflecting it would move cells rather
+                  than just flip tiles. A lattice with u.j = 0 and v.i = 0 that fills the block is
+                  what makes it possible.
+                </p>
+              )}
 
               {activeMaster.extent && (
                 <div className="row">
@@ -1038,6 +1151,49 @@ export function TileSchemaPage() {
 
         <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>Rapport shares</h3>
         <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
+      </section>
+
+      <section className="panel no-print">
+        <h2>Assist with LLM</h2>
+        <p className="muted" style={{ fontSize: '0.8rem' }}>
+          The model replies in the grid notation, not JSON — a tenth the tokens, and a miscounted
+          row comes back as a parse error naming the cell instead of a malformed document.
+        </p>
+        <div className="field">
+          <label>Request</label>
+          <textarea
+            rows={3}
+            value={ui.schemaPrompt}
+            onChange={(e) => patchUi({ schemaPrompt: e.target.value })}
+          />
+        </div>
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={runAssist}
+            disabled={assistBusy || tiles.length === 0}
+          >
+            {assistBusy ? 'Asking…' : 'Propose a pattern'}
+          </button>
+          {presets.map((pattern) => (
+            <button
+              key={pattern.id}
+              type="button"
+              className="btn"
+              title={pattern.description}
+              onClick={() => applyPreset(pattern)}
+            >
+              {pattern.name}
+            </button>
+          ))}
+        </div>
+        {assistError && <p className="error" style={{ marginTop: '0.75rem' }}>{assistError}</p>}
+        {assistNotation && (
+          <pre className="mono" style={{ marginTop: '0.75rem', whiteSpace: 'pre-wrap' }}>
+            {assistNotation}
+          </pre>
+        )}
       </section>
 
       <section className="panel no-print">

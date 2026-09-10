@@ -9,7 +9,6 @@ const links = [
   { to: '/tiles', label: 'Tiles' },
   { to: '/materials', label: 'Materials' },
   { to: '/stock', label: 'Stock' },
-  { to: '/design-family', label: 'Design family' },
   { to: '/tile-schema', label: 'Tile schema' },
   { to: '/boundaries', label: 'Boundaries' },
   { to: '/solve', label: 'Solve' },

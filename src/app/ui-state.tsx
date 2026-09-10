@@ -40,8 +40,10 @@ export type UiState = {
   boundaryRaw: string | null;
   drawResolution: number;
   drawMode: 'outer' | 'hole';
-  familyPrompt: string;
+  schemaPrompt: string;
   materialPrompt: string;
+  /** Selected SDF node in the material graph editor, as a slot path key ('root', 'b.child'). */
+  selectedSdfPath: string | null;
 };
 
 const DEFAULT_UI_STATE: UiState = {
@@ -57,9 +59,9 @@ const DEFAULT_UI_STATE: UiState = {
   boundaryRaw: null,
   drawResolution: 0.25,
   drawMode: 'outer',
-  familyPrompt:
-    'Create a simple running bond module using the available tiles, alternating materials when possible.',
+  schemaPrompt: 'A running bond of the large format with a course of units every fourth row.',
   materialPrompt: 'Worn terracotta with fine grain and subtle speckles, seamlessly tileable.',
+  selectedSdfPath: null,
 };
 
 function loadUiState(): UiState {

@@ -191,3 +191,26 @@ describe('hard-edged fields are periodic even though adjacent texels differ', ()
     expect(maxSeamDelta(sdf, SEED, TILE)).toBe(0);
   });
 });
+
+describe('seam issues carry the offending node path', () => {
+  const tile = { length: 0.6, width: 0.3 };
+
+  it('distinguishes two nodes of the same op', () => {
+    const sdf: SdfNodeJson = {
+      op: 'mix',
+      t: 0.5,
+      a: { op: 'noise', scale: 10 },                                   // clean: 6 x 3 cells
+      b: { op: 'curve', gamma: 2, child: { op: 'noise', scale: 7 } },  // snaps: 4.2 x 2.1
+    };
+    const issues = seamlessnessReport(sdf, tile);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.op).toBe('noise');
+    expect(issues[0]!.path).toEqual(['b', 'child']);
+  });
+
+  it('uses an empty path for a root-level issue', () => {
+    const sdf: SdfNodeJson = { op: 'rotate', angle: 0.7, child: { op: 'noise', scale: 10 } };
+    const issues = seamlessnessReport(sdf, tile);
+    expect(issues[0]!.path).toEqual([]);
+  });
+});

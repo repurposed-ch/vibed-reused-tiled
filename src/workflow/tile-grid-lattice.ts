@@ -1,7 +1,9 @@
 import {
+  extentCells,
   findMasterGrid,
   findTileGrid,
   instanceCells,
+  tileGridCells,
   type IntVec2,
   type MasterGridJson,
   type MirrorJson,
@@ -210,6 +212,43 @@ export function applyMirror(cell: IntVec2, extent: Extent, flip: Mirror): IntVec
   };
 }
 
+/**
+ * Can this domain be mirrored on this axis without breaking the cover?
+ *
+ * Mirroring reflects each occurrence inside the extent *rectangle*. When the
+ * claimed cells fill that rectangle the reflection is a bijection of it and the
+ * mirrored copy occupies exactly the same cells, so all that changes is which
+ * tile sits where — which is what mirroring should mean. When the domain leaves
+ * blanks, as every sheared repeat does, the reflection lands the cells somewhere
+ * else and the cover collapses.
+ *
+ * The test is therefore exact: reflecting the claimed set must give back the
+ * same set. Under that condition the doubled block always tiles — copy two is
+ * just `D + u`, an ordinary lattice translate, so `D ∪ (D + u)` is a complete
+ * residue system modulo the index-2 sublattice `(2u, v)`.
+ *
+ * An orthogonal lattice is the usual way to satisfy this and is the actionable
+ * fix, but it is not the criterion: it is neither necessary (a domain filling
+ * its extent under u=(4,1), v=(0,7) mirrors fine) nor sufficient on its own
+ * (u=(2,0), v=(0,2) in a 4×4 extent is orthogonal and still leaves 12 blanks).
+ */
+export function mirrorAllowed(
+  cells: readonly IntVec2[],
+  extent: Extent,
+  axis: 'x' | 'y',
+): boolean {
+  const key = (cell: IntVec2) => `${cell.i}:${cell.j}`;
+  const claimed = new Set(cells.map(key));
+  for (const cell of cells) {
+    const reflected =
+      axis === 'x'
+        ? { i: extent.iCount - 1 - cell.i, j: cell.j }
+        : { i: cell.i, j: extent.jCount - 1 - cell.j };
+    if (!claimed.has(key(reflected))) return false;
+  }
+  return true;
+}
+
 /** Reflect a spanning block inside a rectangular extent, keeping it contiguous. */
 function mirrorInstance(
   instance: TileGridInstanceJson,
@@ -237,14 +276,6 @@ function applyBasis(basis: Basis, step: IntVec2): IntVec2 {
 
 function composeBasis(outer: Basis, inner: Basis): Basis {
   return { u: applyBasis(outer, inner.u), v: applyBasis(outer, inner.v) };
-}
-
-function extentCells(extent: Extent): IntVec2[] {
-  const out: IntVec2[] = [];
-  for (let i = 0; i < extent.iCount; i += 1) {
-    for (let j = 0; j < extent.jCount; j += 1) out.push({ i, j });
-  }
-  return out;
 }
 
 type Expansion = {
@@ -343,6 +374,25 @@ function expandMaster(
   return { cells, basis: composeBasis(childBasis, levelBasis), tileGrid: tileGrid! };
 }
 
+/**
+ * The cells a level would reflect, plus the rectangle it reflects them in.
+ *
+ * A nested master grid's child block is a full rectangle, so mirroring is always
+ * available above the tile grid; only the labelled domain can be asymmetric.
+ */
+function mirrorableCells(
+  schema: TileSchemaJson,
+  level: MasterGridJson,
+): { cells: IntVec2[]; extent: Extent } | null {
+  const childGrid = findTileGrid(schema, level.childId);
+  if (childGrid) return { cells: tileGridCells(childGrid), extent: childGrid.extent };
+  const childMaster = findMasterGrid(schema, level.childId);
+  if (childMaster?.extent) {
+    return { cells: extentCells(childMaster.extent), extent: childMaster.extent };
+  }
+  return null;
+}
+
 export type SchemaResolution =
   | { ok: true; resolved: ResolvedSchema }
   | { ok: false; reason: string; collisions: IntVec2[] };
@@ -372,6 +422,22 @@ export function tryResolveSchema(schema: TileSchemaJson): SchemaResolution {
       reason: 'The root master grid must be unbounded — remove its extent',
       collisions: [],
     };
+  }
+
+  // Reject an impossible mirror by name. Left to the cover check it would come
+  // back as "does not tile", with nothing pointing at the mirror as the cause.
+  for (const level of schema.masterGrids) {
+    const cells = mirrorableCells(schema, level);
+    if (!cells) continue;
+    for (const axis of ['x', 'y'] as const) {
+      if (level.mirror[axis] !== 'alternate') continue;
+      if (mirrorAllowed(cells.cells, cells.extent, axis)) continue;
+      return {
+        ok: false,
+        reason: `"${level.name}" cannot mirror in ${axis}: the repeat is not symmetric across that axis, so reflecting it moves cells rather than just flipping tiles. An axis-aligned lattice (u.j = 0, v.i = 0) that fills the block is what makes it possible.`,
+        collisions: [],
+      };
+    }
   }
 
   // An alternating mirror doubles the visual period, so the fundamental domain

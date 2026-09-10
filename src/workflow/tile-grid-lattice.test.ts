@@ -13,6 +13,7 @@ import {
 import {
   deriveLattice,
   latticeDet,
+  mirrorAllowed,
   residueClass,
   resolveCell,
   resolveSchema,
@@ -436,5 +437,69 @@ describe('tryResolveSchema', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toMatch(/unbounded/);
+  });
+});
+
+describe('mirrorAllowed', () => {
+  it('accepts a domain that fills its extent', () => {
+    const cells = tileGridCells(gridA3);
+    expect(mirrorAllowed(cells, gridA3.extent, 'x')).toBe(true);
+    expect(mirrorAllowed(cells, gridA3.extent, 'y')).toBe(true);
+  });
+
+  it('rejects a sheared repeat, whose blanks move under reflection', () => {
+    // The staircase leaves four blanks in its 4×7 box. Reflecting sends them to
+    // different cells, so the mirrored copy covers a different set and the cover
+    // collapses — the case every existing mirror test missed.
+    const cells = tileGridCells(gridStaircase);
+    expect(mirrorAllowed(cells, gridStaircase.extent, 'x')).toBe(false);
+    expect(mirrorAllowed(cells, gridStaircase.extent, 'y')).toBe(false);
+  });
+
+  it('is genuinely per-axis', () => {
+    // Symmetric left-to-right, not top-to-bottom.
+    const extent = { iCount: 3, jCount: 2 };
+    const cells: IntVec2[] = [
+      { i: 0, j: 0 },
+      { i: 1, j: 0 },
+      { i: 2, j: 0 },
+    ];
+    expect(mirrorAllowed(cells, extent, 'x')).toBe(true);
+    expect(mirrorAllowed(cells, extent, 'y')).toBe(false);
+  });
+
+  it('is not implied by an orthogonal lattice', () => {
+    // u=(2,0), v=(0,2) is orthogonal and tiles, but only claims 4 of the 16
+    // cells in a 4×4 extent — so reflecting inside that extent still moves them.
+    const sparse = grid({ iCount: 4, jCount: 4 }, [
+      instance('b0', 'b', 0, 0),
+      instance('b1', 'b', 1, 0),
+      instance('b2', 'b', 0, 1),
+      instance('b3', 'b', 1, 1),
+    ]);
+    const cells = tileGridCells(sparse);
+    expect(validateLattice(cells, { i: 2, j: 0 }, { i: 0, j: 2 }).ok).toBe(true);
+    expect(mirrorAllowed(cells, sparse.extent, 'x')).toBe(false);
+  });
+});
+
+describe('mirror rejection', () => {
+  it('names the axis instead of reporting a generic cover failure', () => {
+    const schema = schemaFor(gridStaircase, {
+      u: { i: 4, j: 4 },
+      v: { i: 7, j: 1 },
+      mirror: { x: 'alternate', y: 'none' },
+    });
+    const result = tryResolveSchema(schema);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/cannot mirror in x/);
+    expect(result.reason).toMatch(/u\.j = 0/);
+  });
+
+  it('still lets a symmetric repeat mirror and double', () => {
+    const resolved = resolveSchema(schemaFor(gridA3, { mirror: { x: 'alternate', y: 'none' } }));
+    expect(resolved.u).toEqual({ i: 8, j: 0 });
+    expect(resolved.cells).toHaveLength(32);
   });
 });

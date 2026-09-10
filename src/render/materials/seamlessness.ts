@@ -6,8 +6,15 @@ export type SeamIssue = {
   severity: SeamSeverity;
   /** The op the issue was found on, or 'tile' for whole-tile problems. */
   op: string;
+  /**
+   * Slot path from the root to the offending node, e.g. ['b','child'].
+   * Without this a tree view cannot tell which of several `noise` nodes is meant.
+   */
+  path: SdfSlotKey[];
   message: string;
 };
+
+export type SdfSlotKey = 'child' | 'a' | 'b';
 
 export type TileSize = { length: number; width: number };
 
@@ -23,9 +30,14 @@ function isUnitFraction(f: number): boolean {
   return isNearInteger(1 / f, 1e-6);
 }
 
-function children(node: SdfNodeJson): SdfNodeJson[] {
+const SLOT_KEYS: readonly SdfSlotKey[] = ['child', 'a', 'b'];
+
+function children(node: SdfNodeJson): Array<[SdfSlotKey, SdfNodeJson]> {
   const n = node as unknown as Record<string, SdfNodeJson | undefined>;
-  return [n.child, n.a, n.b].filter((c): c is SdfNodeJson => Boolean(c));
+  return SLOT_KEYS.flatMap((slot) => {
+    const child = n[slot];
+    return child ? [[slot, child] as [SdfSlotKey, SdfNodeJson]] : [];
+  });
 }
 
 /**
@@ -43,7 +55,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
 
   // `p >= 0` everywhere at the root, so abs(p) == p and a root-level mirror is dead.
   // `folded` tracks whether an ancestor can push coords negative.
-  const visit = (node: SdfNodeJson, folded: boolean) => {
+  const visit = (node: SdfNodeJson, folded: boolean, path: SdfSlotKey[]) => {
     switch (node.op) {
       case 'rotate': {
         const quarters = node.angle / (Math.PI / 2);
@@ -51,6 +63,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'error',
             op: 'rotate',
+            path,
             message:
               `angle ${node.angle.toFixed(4)} rad is not a multiple of 90°. Rotating a ` +
               `periodic field off the tile lattice breaks seamlessness.`,
@@ -61,6 +74,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'error',
             op: 'rotate',
+            path,
             message:
               `90°/270° rotation needs a square tile; this one is ` +
               `${P[0].toFixed(3)} × ${P[1].toFixed(3)}. Rotating swaps the axes, but the ` +
@@ -80,6 +94,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
             issues.push({
               severity: 'error',
               op: 'scale',
+              path,
               message:
                 `factor.${axis} = ${f} is not 1/integer. g(p/s) has period s·P, which ` +
                 `only divides P when s = 1/m for a positive integer m.`,
@@ -95,6 +110,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
             issues.push({
               severity: 'error',
               op: 'repeat',
+              path,
               message:
                 `period[${i}] = ${per} does not divide the tile period ${P[i]!.toFixed(3)} ` +
                 `(ratio ${ratio.toFixed(3)}). The repeat phase mismatches at the wrap. ` +
@@ -109,6 +125,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'warning',
             op: 'mirror',
+            path,
             message:
               `mirror has no effect here — p is non-negative at the root, so abs(p) == p. ` +
               `It is only meaningful beneath a translate or repeat.`,
@@ -130,6 +147,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'info',
             op: node.op,
+            path,
             message:
               `scale ${node.scale} gives ${raw.map((r) => r.toFixed(2)).join(' × ')} cells; ` +
               `snapped to ${snapped.join(' × ')} to close the lattice.`,
@@ -144,6 +162,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'info',
             op: 'stripe',
+            path,
             message:
               `spacing ${node.spacing} gives ${bands.toFixed(2)} bands across ` +
               `${per.toFixed(3)}; snapped to ${Math.max(1, Math.round(bands))}.`,
@@ -156,6 +175,7 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
           issues.push({
             severity: 'warning',
             op: 'warp',
+            path,
             message:
               `amount ${node.amount} is large relative to the tile (${P[0]!.toFixed(2)} × ` +
               `${P[1]!.toFixed(2)}). Still seamless, but the field is heavily smeared and ` +
@@ -170,10 +190,10 @@ export function seamlessnessReport(sdf: SdfNodeJson, tile: TileSize): SeamIssue[
 
     // translate and repeat can push coords negative, making a mirror below them live.
     const foldsBelow = folded || node.op === 'translate' || node.op === 'repeat';
-    for (const c of children(node)) visit(c, foldsBelow);
+    for (const [slot, child] of children(node)) visit(child, foldsBelow, [...path, slot]);
   };
 
-  visit(sdf, false);
+  visit(sdf, false, []);
   return issues;
 }
 
