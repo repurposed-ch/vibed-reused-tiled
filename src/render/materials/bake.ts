@@ -187,7 +187,8 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
   gl.viewport(0, 0, size, size);
   gl.useProgram(program);
 
-  const period = Math.max(length, width, 1e-6);
+  const periodX = Math.max(length, 1e-6);
+  const periodY = Math.max(width, 1e-6);
   const s = edgeUniforms(rhythm?.south);
   const n = edgeUniforms(rhythm?.north);
   const e = edgeUniforms(rhythm?.east);
@@ -196,7 +197,7 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
   gl.uniform2f(gl.getUniformLocation(program, 'uResolution'), size, size);
   gl.uniform2f(gl.getUniformLocation(program, 'uTileSize'), length, width);
   gl.uniform1f(gl.getUniformLocation(program, 'uSeed'), material.seed);
-  gl.uniform1f(gl.getUniformLocation(program, 'uPeriod'), period);
+  gl.uniform2f(gl.getUniformLocation(program, 'uPeriod'), periodX, periodY);
   gl.uniform1i(gl.getUniformLocation(program, 'uEdged'), edged ? 1 : 0);
   gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedS'), s.seed);
   gl.uniform1f(gl.getUniformLocation(program, 'uEdgeSeedN'), n.seed);

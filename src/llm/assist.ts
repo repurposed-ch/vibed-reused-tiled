@@ -1,6 +1,7 @@
 import {
   DesignFamilyJsonSchema,
   MaterialDefinitionJsonSchema,
+  SDF_OPS,
   type DesignFamilyJson,
   type MaterialDefinitionJson,
   type StockStateJson,
@@ -371,24 +372,53 @@ export async function assistDesignFamily(args: {
   return parseFamilyJson(text);
 }
 
+// Built from SDF_OPS so the op list cannot drift from the schema.
 const MATERIAL_SCHEMA_HINT = `{
   "type": "MaterialDefinition",
   "id": "string uuid",
   "name": "short material name e.g. terracotta",
   "seed": 1,
   "sdf": {
-    "op": "mix | mul | add | union | subtract | intersect | smoothUnion | translate | rotate | scale | repeat | mirror | circle | box | ring | line | noise | voronoi | brick | band | fill",
+    "op": "${SDF_OPS.join(' | ')}",
     "...": "recursive SDF / procedural graph only — colors and UV edge modes live on tiles"
   }
 }
 
-SDF node examples:
-{ "op": "noise", "scale": 6, "octaves": 4 }
+Field / shade nodes (return 0..1):
+{ "op": "noise", "scale": 6, "octaves": 4, "variant": "fbm | ridged | turbulence | billow" }
+{ "op": "cells", "scale": 9, "metric": "f1 | f2f1 | id", "jitter": 1, "distance": "euclidean | manhattan | chebyshev" }
 { "op": "voronoi", "scale": 5, "edgeWidth": 0.08 }
 { "op": "brick", "brickW": 0.15, "brickH": 0.08, "mortar": 0.012, "offset": 0.5 }
-{ "op": "mix", "t": 0.5, "a": { "op": "noise", "scale": 4 }, "b": { "op": "voronoi", "scale": 3 } }
-{ "op": "fill", "soft": 0.02, "child": { "op": "circle", "radius": 0.05, "center": [0.1, 0.1] } }
-{ "op": "repeat", "period": [0.15, 0.15], "child": { "op": "circle", "radius": 0.03 } }`;
+{ "op": "truchet", "scale": 4, "thickness": 0.28, "variant": "arcs | diagonals" }
+{ "op": "stripe", "axis": "x | y", "spacing": 0.03, "duty": 0.55, "soft": 0.25 }
+{ "op": "checker", "scale": 7 }
+{ "op": "halftone", "scale": 26, "angle": 0.785, "child": { "op": "noise", "scale": 3 } }
+
+Distance nodes (return signed distance in meters — wrap in fill/band to get a shade):
+{ "op": "circle", "radius": 0.05, "center": [0.1, 0.1] }
+{ "op": "line", "a": [0, 0], "b": [0.2, 0.1], "thickness": 0.004 }
+{ "op": "scratches", "count": 3, "length": 0.05, "width": 0.0025, "scale": 10, "angle": 0.4, "spread": 1.2 }
+
+Domain warp — the highest-value op for veining, grain and flow. Always seamless:
+{ "op": "warp", "scale": 2, "amount": 0.09, "octaves": 3, "child": { "op": "noise", "scale": 4, "variant": "ridged" } }
+
+Shaping a field (all take child, all return 0..1):
+{ "op": "curve", "gamma": 2.2, "child": ... }
+{ "op": "posterize", "steps": 7, "child": ... }
+{ "op": "threshold", "level": 0.5, "soft": 0.02, "child": ... }
+{ "op": "remap", "inMin": 0, "inMax": 0.6, "outMin": 0.35, "outMax": 1, "child": ... }
+{ "op": "invert", "child": ... }
+
+Combining: mix (t), mul, add, overlay, screen, union, subtract, intersect, smoothUnion (k).
+{ "op": "fill", "soft": 0.02, "invert": false, "child": { "op": "circle", "radius": 0.05 } }
+{ "op": "repeat", "period": [0.15, 0.15], "child": { "op": "circle", "radius": 0.03 } }
+
+Recipes that work well:
+marble    mix(noise, threshold(warp(noise ridged)), 0.55)
+terrazzo  mul(posterize(cells id), threshold(cells f2f1, 0.06))
+crackle   threshold(warp(cells f2f1), 0.045)
+wood      mix(warp(stripe y), scale([1, 0.1667], noise), 0.35)
+contour   posterize(warp(noise), 9)`;
 
 export type LlmMaterialAssistRequest = {
   prompt: string;
@@ -444,7 +474,13 @@ function buildMaterialPrompt(request: LlmMaterialAssistRequest): string {
   }
   parts.push(
     '',
-    'Rules: return SDF-only materials (no periodMeters, no colors); prefer noise/voronoi/brick/mix; invent a new uuid for id unless revising; seed is an integer.',
+    [
+      'Rules: return SDF-only materials (no periodMeters, no colors); invent a new uuid for id unless revising; seed is an integer.',
+      'Seamlessness: lattice ops (noise/cells/truchet/stripe/checker/scratches/brick/halftone) snap their own cell counts, so they always tile.',
+      'But `rotate` must be 0 or 180 degrees (90/270 only on a square tile), `scale` factors must be 1/integer, and a `repeat` period must divide the tile size.',
+      '`mirror` does nothing at the root — p is non-negative there. Only use it beneath a translate or repeat.',
+      'Keep every shade node in 0..1: a value outside that range is reinterpreted as a signed distance and hard-thresholded to black.',
+    ].join(' '),
   );
   return parts.join('\n');
 }

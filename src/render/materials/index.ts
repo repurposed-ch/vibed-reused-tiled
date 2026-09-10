@@ -12,7 +12,22 @@ export {
   buildBakeFragmentShader,
   compileSdfExpression,
   FULLSCREEN_VERT_GLSL,
+  snapScreenAngle,
 } from './sdf-to-glsl';
+export {
+  evalSdfNode,
+  maxPeriodDelta,
+  maxSeamDelta,
+  toShade,
+  type Vec2,
+} from './sdf-cpu';
+export {
+  seamlessnessReport,
+  worstSeverity,
+  type SeamIssue,
+  type SeamSeverity,
+  type TileSize,
+} from './seamlessness';
 export {
   bakeInputFromTile,
   clearTextureCache,

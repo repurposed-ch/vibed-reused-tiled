@@ -144,11 +144,29 @@ type MaterialDefinitionJson = {
   id: string;
   name: string;
   seed: number;
-  sdf: SdfNodeJson; // tagged union: noise, voronoi, brick, circle, union, mix, …
+  sdf: SdfNodeJson; // tagged union: noise, cells, voronoi, brick, truchet, stripe, checker,
+                    // scratches, halftone, warp, curve/posterize/threshold/remap/invert,
+                    // circle/box/ring/line, CSG, transforms, mix/mul/add/overlay/screen
 };
 ```
 
 **Tile color:** brightness (one hex → SDF as brightness) or Quilez palette (three hex → `a,b,d`, plus float triple `c` editable with sliders, default `(1,1,1)`). Hex in JSON; shader uses 0–1 RGB for `a,b,d`.
+
+**Seamlessness:** `uPeriod` is per-axis (`= uTileSize`), so non-square tiles close on both axes. Lattice primitives snap their own cell counts to integers via `cellCount` / `latticeP`, so they always tile — but three things snapping cannot fix, because correcting them would change the design:
+
+| op | seamless when |
+|---|---|
+| `rotate` | 0° or 180°. 90°/270° only on a **square** tile — they swap the axes, and per-axis periods differ on a rectangle. |
+| `scale` | `factor = 1/m` for a positive integer `m`, per axis |
+| `repeat` | `period` divides the tile size on both axes |
+
+Everything else is unconditionally safe: `warp` preserves whatever periodicity its child had (the displacement is additive and periodic, so it commutes with lattice translation), and the pointwise ops (`curve`, `posterize`, `threshold`, `remap`, `invert`, `overlay`, `screen`, `band`, `fill`, `mix`, `mul`, `add`, CSG) inherit their children's.
+
+`mirror` is a **no-op at the root** — `p` is non-negative there, so `abs(p) == p`. It only does anything beneath a `translate` or `repeat`.
+
+Shade nodes must return 0..1; a value outside that range is reinterpreted as a signed distance and hard-thresholded (`toShade`).
+
+`seamlessnessReport()` audits a graph statically and is surfaced on the Materials page alongside a `seamError` readout of the baked texture. `maxSeamDelta` / `maxPeriodDelta` (CPU reference in `sdf-cpu.ts`) cover it in tests, since the node test environment has no WebGL.
 
 **Rhythm / edges:** omit rhythm → continuous UV; all four sides required for edged UV (SDF mirrored/merged per edge so matching labels stay continuous). Partial rhythm is invalid.
 

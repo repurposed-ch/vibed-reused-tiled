@@ -6,20 +6,48 @@ import {
 } from '@/domain/project';
 import { assistMaterial } from '@/llm/assist';
 import { getProvider, providerRequiresApiKey } from '@/llm/providers';
-import { bakeMaterialTexture } from '@/render/materials';
+import {
+  bakeMaterialTexture,
+  maxSeamDelta,
+  seamlessnessReport,
+  worstSeverity,
+  type SeamIssue,
+} from '@/render/materials';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 
+/**
+ * Field-space seam tolerance.
+ *
+ * Deliberately NOT the pixel-based seamError(): that compares column 0 against column
+ * width-1, which are not wrap-equivalent, so any hard-edged field (terrazzo, checker,
+ * posterize, truchet) scores a large false positive for what is really just a chip
+ * boundary. maxSeamDelta compares p = 0 against p = period and is exact.
+ */
+const SEAM_OK = 1e-6;
+const SEAM_WARN = 1e-3;
+
+const SEVERITY_COLOR: Record<string, string> = {
+  error: '#e06c5a',
+  warning: '#d6a15c',
+  info: '#8a9a8f',
+};
+
 function MaterialPreview({
   material,
   colorHex,
+  length,
+  width,
 }: {
   material: MaterialDefinitionJson;
   colorHex: string;
+  length: number;
+  width: number;
 }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [seam, setSeam] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -27,37 +55,82 @@ function MaterialPreview({
         {
           material,
           color: { mode: 'brightness', color: colorHex },
-          length: 0.3,
-          width: 0.3,
+          length,
+          width,
         },
         128,
       );
       setUrl(baked.dataUrl);
+      setSeam(maxSeamDelta(material.sdf, material.seed, [length, width]));
     } catch {
       setUrl(null);
+      setSeam(null);
     }
-  }, [material, colorHex]);
+  }, [material, colorHex, length, width]);
 
-  if (!url) {
+  const seamColor =
+    seam === null
+      ? '#8a9a8f'
+      : seam <= SEAM_OK
+        ? '#7fa87f'
+        : seam <= SEAM_WARN
+          ? '#d6a15c'
+          : '#e06c5a';
+
+  return (
+    <div className="stack" style={{ gap: '0.35rem' }}>
+      {url ? (
+        <img
+          src={url}
+          alt={`${material.name} preview`}
+          width={128}
+          height={128}
+          style={{ imageRendering: 'pixelated', border: '1px solid #3a322c' }}
+        />
+      ) : (
+        <div
+          style={{
+            width: 128,
+            height: 128,
+            background: colorHex,
+            border: '1px solid #3a322c',
+          }}
+        />
+      )}
+      <span className="mono" style={{ fontSize: '0.7rem', color: seamColor }}>
+        {seam === null
+          ? 'seam —'
+          : seam <= SEAM_OK
+            ? 'seam exact'
+            : `seam ${seam.toFixed(4)}`}
+      </span>
+      <span className="muted mono" style={{ fontSize: '0.65rem' }}>
+        {length.toFixed(2)} × {width.toFixed(2)} m
+      </span>
+    </div>
+  );
+}
+
+function SeamIssues({ issues }: { issues: SeamIssue[] }) {
+  if (issues.length === 0) {
     return (
-      <div
-        style={{
-          width: 128,
-          height: 128,
-          background: colorHex,
-          border: '1px solid #3a322c',
-        }}
-      />
+      <p className="muted mono" style={{ fontSize: '0.72rem' }}>
+        No seamlessness issues.
+      </p>
     );
   }
   return (
-    <img
-      src={url}
-      alt={`${material.name} preview`}
-      width={128}
-      height={128}
-      style={{ imageRendering: 'pixelated', border: '1px solid #3a322c' }}
-    />
+    <ul className="stack" style={{ gap: '0.3rem', margin: 0, paddingLeft: '1rem' }}>
+      {issues.map((issue, i) => (
+        <li
+          key={`${issue.op}-${i}`}
+          className="mono"
+          style={{ fontSize: '0.72rem', color: SEVERITY_COLOR[issue.severity] }}
+        >
+          <strong>{issue.severity}</strong> · {issue.op} — {issue.message}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -95,6 +168,18 @@ export function MaterialsPage() {
 
   const linked = project.tileDefinitions.find((t) => t.materialId === selected?.id);
   const previewColor = linked ? tileDisplayColor(linked.color) : '#c4a574';
+  // Preview at the linked tile's real dimensions; a non-square tile is the case that
+  // used to seam unconditionally, so it is the one worth showing.
+  const previewLength = linked?.length ?? 0.6;
+  const previewWidth = linked?.width ?? 0.3;
+
+  const issues = useMemo(
+    () =>
+      selected
+        ? seamlessnessReport(selected.sdf, { length: previewLength, width: previewWidth })
+        : [],
+    [selected?.sdf, previewLength, previewWidth],
+  );
 
   const updateMaterial = (id: string, patch: Partial<MaterialDefinitionJson>) => {
     updateProject((p) => ({
@@ -164,7 +249,12 @@ export function MaterialsPage() {
         {selected && (
           <section className="panel stack">
             <div className="row" style={{ alignItems: 'flex-start', gap: '1rem' }}>
-              <MaterialPreview material={selected} colorHex={previewColor} />
+              <MaterialPreview
+                material={selected}
+                colorHex={previewColor}
+                length={previewLength}
+                width={previewWidth}
+              />
               <div className="stack" style={{ flex: 1 }}>
                 <div className="field">
                   <label>Name</label>
@@ -198,6 +288,15 @@ export function MaterialsPage() {
               />
             </div>
             {sdfError && <p className="error">{sdfError}</p>}
+
+            <div className="field">
+              <label>
+                Seamlessness{' '}
+                {worstSeverity(issues) ? `(${worstSeverity(issues)})` : '(clean)'}
+              </label>
+              <SeamIssues issues={issues} />
+            </div>
+
             <div className="row">
               <button type="button" className="btn primary" onClick={applySdfJson}>
                 Apply SDF

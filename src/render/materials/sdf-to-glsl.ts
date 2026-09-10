@@ -7,13 +7,57 @@ function num(n: number): string {
   return s.includes('.') || /e/i.test(s) ? s : `${s}.0`;
 }
 
+/** GLSL `int` params must NOT go through num() — it appends `.0`, which is a type error. */
+function int(n: number): string {
+  return String(Math.trunc(n));
+}
+
 function vec2(a: number, b: number): string {
   return `vec2(${num(a)}, ${num(b)})`;
 }
 
+const NOISE_VARIANT: Record<string, number> = {
+  fbm: 0,
+  ridged: 1,
+  turbulence: 2,
+  billow: 3,
+};
+
+const CELL_METRIC: Record<string, number> = { f1: 0, f2f1: 1, id: 2 };
+const CELL_DIST: Record<string, number> = { euclidean: 0, manhattan: 1, chebyshev: 2 };
+
+/**
+ * Nearest Gaussian-integer rotation M = [[a,-b],[b,a]] to `angle`.
+ *
+ * A free-float screen angle cannot close on the torus (it needs
+ * `cells * (cos t, -sin t)` to be an integer vector), so the halftone lattice is
+ * restricted to angles of the form atan2(b, a) and the cell count is snapped to a
+ * multiple of det = a^2 + b^2.
+ */
+export function snapScreenAngle(angle: number): { a: number; b: number } {
+  let best = { a: 1, b: 0 };
+  let bestErr = Infinity;
+  for (let a = -6; a <= 6; a += 1) {
+    for (let b = -6; b <= 6; b += 1) {
+      if (a === 0 && b === 0) continue;
+      if (a * a + b * b > 36) continue;
+      const err = Math.abs(Math.atan2(b, a) - angle);
+      if (err < bestErr) {
+        bestErr = err;
+        best = { a, b };
+      }
+    }
+  }
+  return best;
+}
+
 /**
  * Compile an SDF AST into a GLSL expression that returns float shade/distance
- * for local UV meters `p` (vec2), using locals `seed` and `period`.
+ * for local UV meters `p` (vec2), using locals `seed` (float) and `period` (vec2).
+ *
+ * Invariant: never reference `pExpr` or a child expression more than once in emitted
+ * code — the output is also the shader-program cache key, so duplication compounds
+ * exponentially through nesting. Multi-reference ops go through SDF_LIB_GLSL instead.
  */
 export function compileSdfExpression(node: SdfNodeJson, pExpr = 'p'): string {
   switch (node.op) {
@@ -32,12 +76,36 @@ export function compileSdfExpression(node: SdfNodeJson, pExpr = 'p'): string {
     }
     case 'line':
       return `sdSegment(${pExpr}, ${vec2(node.a[0], node.a[1])}, ${vec2(node.b[0], node.b[1])}, ${num(node.thickness)})`;
-    case 'noise':
-      return `fbm2(${pExpr}, ${num(node.scale)}, ${node.octaves ?? 3}, seed, period)`;
+    case 'noise': {
+      const variant = NOISE_VARIANT[node.variant ?? 'fbm'] ?? 0;
+      const octaves = int(node.octaves ?? 3);
+      return variant === 0
+        ? `fbm2(${pExpr}, ${num(node.scale)}, ${octaves}, seed, period)`
+        : `fbmVariant(${pExpr}, ${num(node.scale)}, ${octaves}, ${int(variant)}, seed, period)`;
+    }
     case 'voronoi':
       return `voronoiEdge(${pExpr}, ${num(node.scale)}, ${num(node.edgeWidth ?? 0.1)}, seed, period)`;
+    case 'cells':
+      return `worley(${pExpr}, ${num(node.scale)}, ${int(CELL_METRIC[node.metric] ?? 0)}, ${num(node.jitter ?? 1)}, ${int(CELL_DIST[node.distance ?? 'euclidean'] ?? 0)}, seed, period)`;
     case 'brick':
-      return `brickShade(${pExpr}, ${num(node.brickW)}, ${num(node.brickH)}, ${num(node.mortar)}, ${num(node.offset ?? 0.5)})`;
+      return `brickShade(${pExpr}, ${num(node.brickW)}, ${num(node.brickH)}, ${num(node.mortar)}, ${num(node.offset ?? 0.5)}, period)`;
+    case 'truchet':
+      return `truchetShade(${pExpr}, ${num(node.scale)}, ${num(node.thickness)}, ${num(node.soft ?? node.thickness * 0.25)}, ${int(node.variant === 'diagonals' ? 1 : 0)}, seed, period)`;
+    case 'stripe': {
+      const v = node.axis === 'x' ? `${pExpr}.x` : `${pExpr}.y`;
+      const per = node.axis === 'x' ? 'period.x' : 'period.y';
+      return `stripeShade(${v}, ${num(node.spacing)}, ${num(node.duty)}, ${num(node.soft ?? 0.02)}, ${per})`;
+    }
+    case 'checker':
+      return `checkerShade(${pExpr}, ${num(node.scale)}, period)`;
+    case 'scratches':
+      return `scratchDist(${pExpr}, ${int(node.count)}, ${num(node.length)}, ${num(node.width)}, ${num(node.scale)}, ${num(node.angle ?? 0)}, ${num(node.spread ?? Math.PI * 2)}, seed, period)`;
+    case 'halftone': {
+      const { a, b } = snapScreenAngle(node.angle ?? 0);
+      const centre = `halftoneCenter(${pExpr}, ${num(node.scale)}, period, ${num(a)}, ${num(b)})`;
+      const v = `toShade(${compileSdfExpression(node.child, centre)})`;
+      return `halftoneMask(${pExpr}, ${num(node.scale)}, ${num(node.soft ?? 0.02)}, period, ${num(a)}, ${num(b)}, ${v})`;
+    }
     case 'union':
       return `min(${compileSdfExpression(node.a, pExpr)}, ${compileSdfExpression(node.b, pExpr)})`;
     case 'subtract':
@@ -51,28 +119,29 @@ export function compileSdfExpression(node: SdfNodeJson, pExpr = 'p'): string {
       return compileSdfExpression(node.child, q);
     }
     case 'rotate': {
-      const c = `cos(${num(-node.angle)})`;
-      const s = `sin(${num(-node.angle)})`;
-      const q = `vec2(${pExpr}.x * ${c} - ${pExpr}.y * ${s}, ${pExpr}.x * ${s} + ${pExpr}.y * ${c})`;
-      return compileSdfExpression(node.child, q);
+      // Fold the trig at compile time; rot2 keeps pExpr to a single reference.
+      const c = Math.cos(-node.angle);
+      const s = Math.sin(-node.angle);
+      return compileSdfExpression(node.child, `rot2(${pExpr}, ${num(c)}, ${num(s)})`);
     }
     case 'scale': {
       const sx = typeof node.factor === 'number' ? node.factor : node.factor[0];
       const sy = typeof node.factor === 'number' ? node.factor : node.factor[1];
       const m = Math.min(Math.abs(sx), Math.abs(sy)) || 1;
-      const q = `vec2(${pExpr}.x / ${num(sx || 1)}, ${pExpr}.y / ${num(sy || 1)})`;
+      const q = `scale2(${pExpr}, ${vec2(sx || 1, sy || 1)})`;
       return `(${compileSdfExpression(node.child, q)} * ${num(m)})`;
     }
     case 'repeat': {
       const [px, py] = node.period;
-      const q = `vec2(wrapCentered(${pExpr}.x, ${num(px)}), wrapCentered(${pExpr}.y, ${num(py)}))`;
-      return compileSdfExpression(node.child, q);
+      return compileSdfExpression(node.child, `repeat2(${pExpr}, ${vec2(px, py)})`);
     }
     case 'mirror': {
-      let q = pExpr;
-      if (node.axis === 'x') q = `vec2(abs(${pExpr}.x), ${pExpr}.y)`;
-      else if (node.axis === 'y') q = `vec2(${pExpr}.x, abs(${pExpr}.y))`;
-      else q = `abs(${pExpr})`;
+      const m =
+        node.axis === 'x' ? vec2(1, 0) : node.axis === 'y' ? vec2(0, 1) : vec2(1, 1);
+      return compileSdfExpression(node.child, `mirror2(${pExpr}, ${m})`);
+    }
+    case 'warp': {
+      const q = `warpP(${pExpr}, ${num(node.scale)}, ${num(node.amount)}, ${int(node.octaves ?? 3)}, seed, period)`;
       return compileSdfExpression(node.child, q);
     }
     case 'band': {
@@ -84,12 +153,30 @@ export function compileSdfExpression(node: SdfNodeJson, pExpr = 'p'): string {
       const s = `(1.0 - smoothstep(${num(-soft)}, ${num(soft)}, ${compileSdfExpression(node.child, pExpr)}))`;
       return node.invert ? `(1.0 - ${s})` : s;
     }
+    case 'curve':
+      // toShade guarantees a non-negative base; pow() is undefined for x < 0.
+      return `pow(toShade(${compileSdfExpression(node.child, pExpr)}), ${num(node.gamma)})`;
+    case 'posterize':
+      return `posterize(toShade(${compileSdfExpression(node.child, pExpr)}), ${num(node.steps)})`;
+    case 'threshold': {
+      // smoothstep() is undefined when both edges are equal.
+      const soft = Math.max(node.soft ?? 0.02, 1e-5);
+      return `smoothstep(${num(node.level - soft)}, ${num(node.level + soft)}, toShade(${compileSdfExpression(node.child, pExpr)}))`;
+    }
+    case 'remap':
+      return `remapRange(toShade(${compileSdfExpression(node.child, pExpr)}), ${num(node.inMin)}, ${num(node.inMax)}, ${num(node.outMin)}, ${num(node.outMax)})`;
+    case 'invert':
+      return `(1.0 - toShade(${compileSdfExpression(node.child, pExpr)}))`;
     case 'mix':
       return `mix(${compileSdfExpression(node.a, pExpr)}, ${compileSdfExpression(node.b, pExpr)}, ${num(node.t)})`;
     case 'mul':
       return `(${compileSdfExpression(node.a, pExpr)} * ${compileSdfExpression(node.b, pExpr)})`;
     case 'add':
       return `(${compileSdfExpression(node.a, pExpr)} + ${compileSdfExpression(node.b, pExpr)})`;
+    case 'overlay':
+      return `blendOverlay(toShade(${compileSdfExpression(node.a, pExpr)}), toShade(${compileSdfExpression(node.b, pExpr)}))`;
+    case 'screen':
+      return `blendScreen(toShade(${compileSdfExpression(node.a, pExpr)}), toShade(${compileSdfExpression(node.b, pExpr)}))`;
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
@@ -113,7 +200,7 @@ precision highp float;
 uniform vec2 uResolution;
 uniform vec2 uTileSize;
 uniform float uSeed;
-uniform float uPeriod;
+uniform vec2 uPeriod;
 uniform int uColorMode; // 0 = brightness, 1 = palette
 uniform vec3 uColor;    // brightness base / unused in palette
 uniform vec3 uPalA;
@@ -131,14 +218,11 @@ uniform float uEdgeMirrorE;
 uniform float uEdgeMirrorW;
 out vec4 fragColor;
 ${SDF_LIB_GLSL}
-float shadeRaw(vec2 p, float seed, float period) {
+float shadeRaw(vec2 p, float seed, vec2 period) {
   return ${expr};
 }
 float normalizeShade(float v) {
-  if (v < 0.0 || v > 1.0) {
-    return 1.0 - smoothstep(-0.02, 0.02, v);
-  }
-  return clamp(v, 0.0, 1.0);
+  return toShade(v);
 }
 float shadeContinuous(vec2 uv01) {
   vec2 p = wrapPeriod2(uv01 * uTileSize, uPeriod);
