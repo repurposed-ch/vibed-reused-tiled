@@ -109,10 +109,20 @@ export function drawWindow(
 
   const spanX = Math.max(snapped.maxX - snapped.minX, step);
   const spanY = Math.max(snapped.maxY - snapped.minY, step);
-  const lines = Math.max(spanX, spanY) / step;
-  const factor = lines > MAX_GRID_LINES ? Math.ceil(lines / MAX_GRID_LINES) : 1;
 
-  return { ...snapped, resolution: step, lineSpacing: step * factor };
+  return { ...snapped, resolution: step, lineSpacing: lineSpacingFor(Math.max(spanX, spanY), step) };
+}
+
+/**
+ * Spacing for drawn grid lines across `span` metres: the resolution, or a
+ * multiple of it once that would exceed the line cap. Only the guides thin out —
+ * snapping keeps the true resolution.
+ */
+export function lineSpacingFor(span: number, resolution: number): number {
+  const step = resolution > EPSILON ? resolution : 0.1;
+  const lines = span / step;
+  const factor = lines > MAX_GRID_LINES ? Math.ceil(lines / MAX_GRID_LINES) : 1;
+  return step * factor;
 }
 
 /** Grid coordinates along one axis, inclusive of both ends. */
@@ -123,6 +133,100 @@ export function gridLines(from: number, to: number, spacing: number): number[] {
   const end = Math.floor(to / spacing + EPSILON);
   for (let n = start; n <= end; n += 1) out.push(zero(n * spacing));
   return out;
+}
+
+/**
+ * Where the canvas is looking: a world centre and a scale.
+ *
+ * A scale rather than a world rectangle, so the viewBox can always take the
+ * element's own pixel aspect ratio. The grid then fills the canvas edge to edge,
+ * and zooming has no letterboxing to account for.
+ */
+export type View = { centerX: number; centerY: number; metresPerPixel: number };
+
+/** Closest zoom: half a millimetre per pixel. */
+export const MIN_METRES_PER_PIXEL = 0.0005;
+/** Furthest zoom: half a metre per pixel, several hundred metres across the canvas. */
+export const MAX_METRES_PER_PIXEL = 0.5;
+
+function clampScale(metresPerPixel: number): number {
+  return Math.min(MAX_METRES_PER_PIXEL, Math.max(MIN_METRES_PER_PIXEL, metresPerPixel));
+}
+
+/** The world rectangle a view shows on a canvas of this pixel size. */
+export function viewBounds(view: View, widthPx: number, heightPx: number): Bounds {
+  const halfWidth = (Math.max(widthPx, 1) * view.metresPerPixel) / 2;
+  const halfHeight = (Math.max(heightPx, 1) * view.metresPerPixel) / 2;
+  return {
+    minX: view.centerX - halfWidth,
+    minY: view.centerY - halfHeight,
+    maxX: view.centerX + halfWidth,
+    maxY: view.centerY + halfHeight,
+  };
+}
+
+/** World point under a pixel, measured from the canvas's top-left corner. */
+export function worldAtPixel(
+  view: View,
+  widthPx: number,
+  heightPx: number,
+  px: number,
+  py: number,
+): Point {
+  return {
+    x: view.centerX + (px - widthPx / 2) * view.metresPerPixel,
+    // Pixels count down, world +Y is up.
+    y: view.centerY - (py - heightPx / 2) * view.metresPerPixel,
+  };
+}
+
+/**
+ * A view framing the drawing. Reuses {@link drawWindow} for the framing, so the
+ * margin to draw into and the always-visible origin behave as they did before
+ * the canvas could be panned.
+ */
+export function fitView(
+  bounds: Bounds | null,
+  widthPx: number,
+  heightPx: number,
+  resolution: number,
+): View {
+  const frame = drawWindow(bounds, resolution);
+  return {
+    centerX: (frame.minX + frame.maxX) / 2,
+    centerY: (frame.minY + frame.maxY) / 2,
+    metresPerPixel: clampScale(
+      Math.max(
+        (frame.maxX - frame.minX) / Math.max(widthPx, 1),
+        (frame.maxY - frame.minY) / Math.max(heightPx, 1),
+      ),
+    ),
+  };
+}
+
+/**
+ * Zoom by `factor` (above one zooms out) keeping `anchor` fixed on screen. When
+ * the scale clamps, the centre moves by the factor actually applied, so the
+ * point under the cursor still does not slide.
+ */
+export function zoomViewAt(view: View, anchor: Point, factor: number): View {
+  if (!(factor > 0) || !Number.isFinite(factor)) return view;
+  const metresPerPixel = clampScale(view.metresPerPixel * factor);
+  const applied = metresPerPixel / view.metresPerPixel;
+  return {
+    centerX: anchor.x + (view.centerX - anchor.x) * applied,
+    centerY: anchor.y + (view.centerY - anchor.y) * applied,
+    metresPerPixel,
+  };
+}
+
+/** Move the view so the content follows a pointer dragged by this many pixels. */
+export function panView(view: View, dxPx: number, dyPx: number): View {
+  return {
+    ...view,
+    centerX: view.centerX - dxPx * view.metresPerPixel,
+    centerY: view.centerY + dyPx * view.metresPerPixel,
+  };
 }
 
 export type VertexRef = { loop: number; index: number };

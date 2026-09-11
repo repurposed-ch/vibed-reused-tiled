@@ -16,7 +16,16 @@ import {
   reverseLoop,
   signedArea,
   snapToGrid,
+  fitView,
+  lineSpacingFor,
+  MAX_METRES_PER_PIXEL,
+  MIN_METRES_PER_PIXEL,
+  panView,
+  viewBounds,
+  worldAtPixel,
+  zoomViewAt,
   type Loop,
+  type View,
 } from '@/render/svg/boundary-draw-geometry';
 
 const lShape: Loop = [
@@ -253,5 +262,70 @@ describe('picking', () => {
     expect(cyclePick([1, 0], 0)).toBe(1); // wraps
     expect(cyclePick([1, 0], 7)).toBe(1); // restarts when current is not a candidate
     expect(cyclePick([], 1)).toBeNull();
+  });
+});
+
+describe('view', () => {
+  it('fits the drawing and the origin, at the canvas aspect ratio', () => {
+    const view = fitView({ minX: 2, minY: 1, maxX: 10, maxY: 5 }, 800, 400, 0.25);
+    const b = viewBounds(view, 800, 400);
+    expect(b.minX).toBeLessThanOrEqual(0);
+    expect(b.minY).toBeLessThanOrEqual(0);
+    expect(b.maxX).toBeGreaterThanOrEqual(10);
+    expect(b.maxY).toBeGreaterThanOrEqual(5);
+    expect((b.maxX - b.minX) / (b.maxY - b.minY)).toBeCloseTo(2, 9);
+  });
+
+  it('fits an empty drawing around the origin', () => {
+    const b = viewBounds(fitView(null, 600, 300, 0.1), 600, 300);
+    expect(b.minX).toBeLessThanOrEqual(0);
+    expect(b.maxX).toBeGreaterThan(0);
+  });
+
+  it('maps pixels to world with +Y up', () => {
+    const view: View = { centerX: 1, centerY: 2, metresPerPixel: 0.01 };
+    expect(worldAtPixel(view, 800, 400, 400, 200)).toEqual({ x: 1, y: 2 });
+    const b = viewBounds(view, 800, 400);
+    const topLeft = worldAtPixel(view, 800, 400, 0, 0);
+    expect(topLeft.x).toBeCloseTo(b.minX, 12);
+    expect(topLeft.y).toBeCloseTo(b.maxY, 12);
+  });
+
+  it('zooms around the anchor', () => {
+    const view: View = { centerX: 1, centerY: 2, metresPerPixel: 0.01 };
+    const anchor = { x: 4, y: -1 };
+    const pixelOffset = (v: View) => [
+      (anchor.x - v.centerX) / v.metresPerPixel,
+      (anchor.y - v.centerY) / v.metresPerPixel,
+    ];
+    const zoomed = zoomViewAt(view, anchor, 0.5);
+    expect(zoomed.metresPerPixel).toBeCloseTo(0.005, 12);
+    expect(pixelOffset(zoomed)[0]).toBeCloseTo(pixelOffset(view)[0]!, 9);
+    expect(pixelOffset(zoomed)[1]).toBeCloseTo(pixelOffset(view)[1]!, 9);
+  });
+
+  it('clamps at both limits without sliding the anchor', () => {
+    const view: View = { centerX: 0, centerY: 0, metresPerPixel: 0.01 };
+    const anchor = { x: 3, y: 2 };
+    const inward = zoomViewAt(view, anchor, 1e-6);
+    expect(inward.metresPerPixel).toBe(MIN_METRES_PER_PIXEL);
+    expect((anchor.x - inward.centerX) / inward.metresPerPixel).toBeCloseTo(
+      (anchor.x - view.centerX) / view.metresPerPixel,
+      6,
+    );
+    expect(zoomViewAt(view, anchor, 1e6).metresPerPixel).toBe(MAX_METRES_PER_PIXEL);
+  });
+
+  it('pans so content follows the pointer', () => {
+    const moved = panView({ centerX: 0, centerY: 0, metresPerPixel: 0.01 }, 100, 50);
+    // Dragged right: the view looks further left. Dragged down: further up.
+    expect(moved.centerX).toBeCloseTo(-1, 12);
+    expect(moved.centerY).toBeCloseTo(0.5, 12);
+  });
+
+  it('thins grid lines past the cap', () => {
+    expect(lineSpacingFor(6, 0.25)).toBe(0.25);
+    // 2000 lines over 20 m at 1 cm is past the cap of 160: every 13th line.
+    expect(lineSpacingFor(20, 0.01)).toBeCloseTo(0.13, 12);
   });
 });

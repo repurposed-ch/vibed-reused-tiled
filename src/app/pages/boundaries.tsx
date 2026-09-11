@@ -29,6 +29,10 @@ export function BoundariesPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeLoop, setActiveLoop] = useState(-1);
   const [selection, setSelection] = useState<LoopSelection | null>(null);
+  // Bumped to reframe the canvas on the drawing. The view itself lives in the
+  // canvas and is not stored, so every visit starts fitted.
+  const [fitKey, setFitKey] = useState(0);
+  const fit = () => setFitKey((k) => k + 1);
 
   // One ordered list of loops, orientation being each loop's role. It becomes page
   // state after an edit for two reasons: a loop still being drawn has too few
@@ -106,6 +110,7 @@ export function BoundariesPage() {
       setDraft(null);
       setSelection(null);
       setActiveLoop(-1);
+      fit();
       setRaw(null);
       setError(null);
     } catch (err) {
@@ -146,6 +151,7 @@ export function BoundariesPage() {
     setActiveLoop(-1);
     setSelection(null);
     setError(null);
+    fit();
   };
 
   const openLoop = drawing ? loops[activeLoop] : undefined;
@@ -229,6 +235,9 @@ export function BoundariesPage() {
         </div>
 
         <div className="row" style={{ marginTop: '0.75rem' }}>
+          <button type="button" className="btn" onClick={fit}>
+            Fit
+          </button>
           <button
             type="button"
             className="btn"
@@ -287,12 +296,13 @@ export function BoundariesPage() {
             onSelect={setSelection}
             onReverse={reverseAt}
             onDeleteLoop={deleteLoopAt}
+            fitKey={fitKey}
           />
         </div>
 
         <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
           <span style={{ color: ORIENTATION_STROKE.ccw }}>■</span> counter-clockwise is solid ·{' '}
-          <span style={{ color: ORIENTATION_STROKE.cw }}>■</span> clockwise is a hole.{' '}
+          <span style={{ color: ORIENTATION_STROKE.cw }}>■</span> clockwise is a hole. Scroll to zoom; middle-drag or Space+drag to pan.{' '}
           {ui.drawTool === 'draw'
             ? 'Click the grid to add a vertex and the green first vertex to close — the direction you trace decides the role. Drag a vertex to move it.'
             : 'Click a polygon to select it; clicking the same spot again steps to the next polygon underneath. With one selected, R reverses it and Delete removes it.'}

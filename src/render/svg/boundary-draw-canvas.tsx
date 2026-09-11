@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -6,19 +7,24 @@ import {
 } from 'react';
 import {
   cyclePick,
-  drawWindow,
+  fitView,
   gridLines,
   isClosable,
+  lineSpacingFor,
   loopsBounds,
   nearestVertex,
   orientationOf,
   ORIENTATION_STROKE,
+  panView,
   pickLoopsAt,
   signedArea,
   snapToGrid,
-  type DrawWindow,
+  viewBounds,
+  worldAtPixel,
+  zoomViewAt,
   type Loop,
   type Point,
+  type View,
 } from './boundary-draw-geometry';
 
 /**
@@ -32,6 +38,11 @@ import {
  * is how a hole is drawn inside an outline. **Select** picks whole polygons: the
  * smallest one under the click first, and clicking the same spot again steps to
  * the next one underneath. Vertices can be dragged with either tool.
+ *
+ * The view pans and zooms CAD-style, whichever tool is active: the wheel (and a
+ * trackpad's scroll and pinch) zooms around the cursor, and a middle-button or
+ * Space drag pans. The view is not stored; the page asks for a fit through
+ * `fitKey`.
  *
  * Draws +Y up like the rest of the app. Vertices snap to the chosen resolution;
  * the drawn guides thin out when that resolution would flood the view, while
@@ -54,6 +65,8 @@ export type BoundaryDrawCanvasProps = {
   onSelect: (selection: LoopSelection | null) => void;
   onReverse: (loop: number) => void;
   onDeleteLoop: (loop: number) => void;
+  /** Change it to reframe the view on the drawing. */
+  fitKey: number;
   heightPx?: number;
 };
 
@@ -61,6 +74,21 @@ const FILL = { ccw: 'rgba(217,119,58,0.14)', cw: 'rgba(91,143,199,0.16)' } as co
 const FILL_SELECTED = { ccw: 'rgba(217,119,58,0.34)', cw: 'rgba(91,143,199,0.38)' } as const;
 /** A loop still being drawn has no orientation yet, so it gets no role colour. */
 const NEUTRAL = '#b5a89a';
+
+/** Grab radius in screen pixels, so vertices are as easy to hit at any zoom. */
+const GRAB_PX = 8;
+/** Wheel response per pixel of scroll. Pinch arrives as ctrl+wheel with much smaller deltas. */
+const WHEEL_ZOOM = 0.0015;
+const PINCH_ZOOM = 0.01;
+
+type GestureLike = Event & { scale: number; clientX: number; clientY: number };
+
+function isEditable(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  );
+}
 
 export function BoundaryDrawCanvas({
   loops,
@@ -73,6 +101,7 @@ export function BoundaryDrawCanvas({
   onSelect,
   onReverse,
   onDeleteLoop,
+  fitKey,
   heightPx = 420,
 }: BoundaryDrawCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -81,43 +110,152 @@ export function BoundaryDrawCanvas({
   /** Where the previous select click landed, so a second click there cycles. */
   const lastPick = useRef<Point | null>(null);
 
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [view, setView] = useState<View | null>(null);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [panning, setPanning] = useState(false);
+  /** Last client position of an active pan. */
+  const panFrom = useRef<{ x: number; y: number } | null>(null);
+  const pointerInside = useRef(false);
+  const fittedKey = useRef<number | null>(null);
+
   const selectedLoop = selection != null && selection.loop < loops.length ? selection.loop : null;
 
-  /**
-   * The view only ever grows, and only when the drawing leaves it.
-   *
-   * Recomputing from the drawing's bounds on every vertex made the grid rescale
-   * under the cursor as you placed points — each click moved the canvas, so the
-   * next one landed somewhere else. Holding the window steady and widening it
-   * only when a point would fall outside keeps the grid still while you work.
-   */
-  const wanted = drawWindow(loopsBounds(loops), resolution);
-  const held = useRef<DrawWindow | null>(null);
-  const previous = held.current;
-  const sameStep = previous?.resolution === wanted.resolution;
-  const win: DrawWindow =
-    previous == null ||
-    !sameStep ||
-    wanted.minX < previous.minX ||
-    wanted.minY < previous.minY ||
-    wanted.maxX > previous.maxX ||
-    wanted.maxY > previous.maxY
-      ? {
-          // Widen to cover both, so an existing view is never cropped.
-          ...wanted,
-          minX: Math.min(wanted.minX, sameStep ? previous!.minX : wanted.minX),
-          minY: Math.min(wanted.minY, sameStep ? previous!.minY : wanted.minY),
-          maxX: Math.max(wanted.maxX, sameStep ? previous!.maxX : wanted.maxX),
-          maxY: Math.max(wanted.maxY, sameStep ? previous!.maxY : wanted.maxY),
-        }
-      : previous;
-  held.current = win;
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      setSize((prev) =>
+        prev?.width === rect.width && prev.height === rect.height
+          ? prev
+          : { width: rect.width, height: rect.height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(svg);
+    return () => observer.disconnect();
+  }, []);
 
-  const spanX = win.maxX - win.minX;
-  const spanY = win.maxY - win.minY;
+  // Fit once the canvas has a size, and again whenever the page bumps `fitKey`.
+  // Edits do not refit: the view moving while you draw is what made clicks land
+  // in the wrong place before.
+  useEffect(() => {
+    if (!size || fittedKey.current === fitKey) return;
+    fittedKey.current = fitKey;
+    setView(fitView(loopsBounds(loops), size.width, size.height, resolution));
+  }, [size, fitKey, loops, resolution]);
 
-  // Snap tolerance in metres, generous enough to grab a vertex by eye.
-  const grabTolerance = Math.max(resolution * 0.6, spanX / 80);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    // Anchored from view state rather than the rendered viewBox, so a burst of
+    // wheel events between renders still zooms about the right point.
+    const zoomAt = (clientX: number, clientY: number, factor: number) => {
+      const rect = svg.getBoundingClientRect();
+      setView((prev) => {
+        if (!prev) return prev;
+        const anchor = worldAtPixel(
+          prev,
+          rect.width,
+          rect.height,
+          clientX - rect.left,
+          clientY - rect.top,
+        );
+        return zoomViewAt(prev, anchor, factor);
+      });
+    };
+
+    let gesturing = false;
+    let lastScale = 1;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      // Safari reports a pinch as gesture events; ignore any wheel echo of it.
+      if (gesturing) return;
+      const unit =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? svg.clientHeight
+            : 1;
+      const k = event.ctrlKey ? PINCH_ZOOM : WHEEL_ZOOM;
+      // Scrolling down (positive delta) zooms out.
+      zoomAt(event.clientX, event.clientY, Math.exp(event.deltaY * unit * k));
+    };
+    const onGestureStart = (event: Event) => {
+      event.preventDefault();
+      gesturing = true;
+      lastScale = (event as GestureLike).scale || 1;
+    };
+    const onGestureChange = (event: Event) => {
+      event.preventDefault();
+      const gesture = event as GestureLike;
+      const ratio = gesture.scale / lastScale;
+      lastScale = gesture.scale;
+      // Fingers spreading (ratio above one) zoom in.
+      if (ratio > 0) zoomAt(gesture.clientX, gesture.clientY, 1 / ratio);
+    };
+    const onGestureEnd = (event: Event) => {
+      event.preventDefault();
+      gesturing = false;
+    };
+
+    // Not React's onWheel: that listener is passive, so it cannot keep the page
+    // from scrolling underneath the zoom.
+    svg.addEventListener('wheel', onWheel, { passive: false });
+    svg.addEventListener('gesturestart', onGestureStart, { passive: false });
+    svg.addEventListener('gesturechange', onGestureChange, { passive: false });
+    svg.addEventListener('gestureend', onGestureEnd, { passive: false });
+    return () => {
+      svg.removeEventListener('wheel', onWheel);
+      svg.removeEventListener('gesturestart', onGestureStart);
+      svg.removeEventListener('gesturechange', onGestureChange);
+      svg.removeEventListener('gestureend', onGestureEnd);
+    };
+  }, []);
+
+  useEffect(() => {
+    // On the window, because Space should work without first clicking the canvas
+    // — but only with the pointer over it, and never while typing, so Space still
+    // types a space in the JSON box on the same page.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || isEditable(event.target)) return;
+      if (!pointerInside.current && !panFrom.current) return;
+      // Also stops the page scrolling and a focused button being pressed.
+      event.preventDefault();
+      setSpaceHeld(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      if (pointerInside.current && !isEditable(event.target)) event.preventDefault();
+      setSpaceHeld(false);
+    };
+    const onBlur = () => setSpaceHeld(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  const widthPx = size?.width ?? 800;
+  const heightOnScreen = size?.height ?? heightPx;
+  // Before the first measurement there is no view yet; render a provisional fit.
+  const active = view ?? fitView(loopsBounds(loops), widthPx, heightOnScreen, resolution);
+  const bounds = viewBounds(active, widthPx, heightOnScreen);
+  const spanX = bounds.maxX - bounds.minX;
+  const spanY = bounds.maxY - bounds.minY;
+  const lineSpacing = lineSpacingFor(Math.max(spanX, spanY), resolution);
+  const mpp = active.metresPerPixel;
+
+  const grabTolerance = GRAB_PX * mpp;
 
   const toWorld = (event: ReactPointerEvent): Point | null => {
     const svg = svgRef.current;
@@ -132,8 +270,21 @@ export function BoundaryDrawCanvas({
 
   const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
+    if (!svg) return;
+
+    // Panning comes first, so it never also adds a vertex or changes the selection.
+    if (event.button === 1 || (event.button === 0 && spaceHeld)) {
+      event.preventDefault();
+      svg.setPointerCapture(event.pointerId);
+      panFrom.current = { x: event.clientX, y: event.clientY };
+      setPanning(true);
+      setHover(null);
+      return;
+    }
+    if (event.button !== 0) return;
+
     const world = toWorld(event);
-    if (!svg || !world) return;
+    if (!world) return;
     svg.setPointerCapture(event.pointerId);
     // Focus so R and Delete reach this canvas. The key handler is scoped to the
     // canvas rather than the window: the same page has a JSON textarea, where
@@ -192,6 +343,15 @@ export function BoundaryDrawCanvas({
   };
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const from = panFrom.current;
+    if (from) {
+      const dx = event.clientX - from.x;
+      const dy = event.clientY - from.y;
+      panFrom.current = { x: event.clientX, y: event.clientY };
+      setView((prev) => (prev ? panView(prev, dx, dy) : prev));
+      return;
+    }
+
     const world = toWorld(event);
     if (!world) return;
     setHover(snapToGrid(world, resolution));
@@ -208,6 +368,8 @@ export function BoundaryDrawCanvas({
     const svg = svgRef.current;
     if (svg?.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
     setDragging(null);
+    panFrom.current = null;
+    setPanning(false);
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
@@ -272,7 +434,7 @@ export function BoundaryDrawCanvas({
               key={index}
               cx={v.x}
               cy={-v.y}
-              r={(isSelectedVertex || isCloseTarget ? 7 : 5) * (spanX / 800)}
+              r={(isSelectedVertex || isCloseTarget ? 7 : 5) * mpp}
               fill={isCloseTarget ? '#6f8f6a' : isSelectedVertex ? '#f3ebe1' : stroke}
               stroke="#1a1714"
               strokeWidth={1}
@@ -284,18 +446,26 @@ export function BoundaryDrawCanvas({
     );
   };
 
+  const cursor = panning
+    ? 'grabbing'
+    : spaceHeld
+      ? 'grab'
+      : tool === 'select'
+        ? 'default'
+        : 'crosshair';
+
   return (
     <svg
       ref={svgRef}
       tabIndex={0}
-      viewBox={`${win.minX} ${-win.maxY} ${spanX} ${spanY}`}
+      viewBox={`${bounds.minX} ${-bounds.maxY} ${spanX} ${spanY}`}
       preserveAspectRatio="xMidYMid meet"
       style={{
         width: '100%',
         height: `${heightPx}px`,
         touchAction: 'none',
         userSelect: 'none',
-        cursor: tool === 'select' ? 'default' : 'crosshair',
+        cursor,
         background: '#1a1714',
       }}
       onPointerDown={onPointerDown}
@@ -303,30 +473,41 @@ export function BoundaryDrawCanvas({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
-      onPointerLeave={() => setHover(null)}
+      onPointerEnter={() => {
+        pointerInside.current = true;
+      }}
+      onPointerLeave={() => {
+        pointerInside.current = false;
+        setHover(null);
+      }}
+      // Middle-click autoscroll starts from mousedown, which pointerdown alone
+      // does not cancel everywhere.
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault();
+      }}
       onKeyDown={onKeyDown}
       role="application"
-      aria-label="Boundary drawing. With a polygon selected, R reverses it and Delete removes it."
+      aria-label="Boundary drawing. Scroll to zoom, middle-drag or Space-drag to pan. With a polygon selected, R reverses it and Delete removes it."
     >
       <g>
-        {gridLines(win.minX, win.maxX, win.lineSpacing).map((x) => (
+        {gridLines(bounds.minX, bounds.maxX, lineSpacing).map((x) => (
           <line
             key={`x${x}`}
             x1={x}
-            y1={-win.minY}
+            y1={-bounds.minY}
             x2={x}
-            y2={-win.maxY}
+            y2={-bounds.maxY}
             stroke={x === 0 ? 'rgba(181,168,154,0.5)' : 'rgba(74,64,54,0.55)'}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        {gridLines(win.minY, win.maxY, win.lineSpacing).map((y) => (
+        {gridLines(bounds.minY, bounds.maxY, lineSpacing).map((y) => (
           <line
             key={`y${y}`}
-            x1={win.minX}
+            x1={bounds.minX}
             y1={-y}
-            x2={win.maxX}
+            x2={bounds.maxX}
             y2={-y}
             stroke={y === 0 ? 'rgba(181,168,154,0.5)' : 'rgba(74,64,54,0.55)'}
             strokeWidth={1}
@@ -337,11 +518,11 @@ export function BoundaryDrawCanvas({
 
       {order.map(renderLoop)}
 
-      {hover && tool === 'draw' && (
+      {hover && tool === 'draw' && !panning && !spaceHeld && (
         <circle
           cx={hover.x}
           cy={-hover.y}
-          r={3 * (spanX / 800)}
+          r={3 * mpp}
           fill="none"
           stroke="rgba(243,235,225,0.7)"
           strokeWidth={1}
