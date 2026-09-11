@@ -3,7 +3,7 @@ import { Group, Mesh, Texture, type InstancedMesh } from 'three';
 import type { DesignInstanceJson, PlacementJson } from '@/domain/instance';
 import { translationMat3 } from '@/domain/mat3';
 import { createTileDefinition } from '@/domain/tile';
-import { buildGroutGeometry, createGroutMaterial, groutBlocks } from '@/render/r3f/grout-geometry';
+import { buildGroutGeometry, createGroutMaterial, groutPlan } from '@/render/r3f/grout-geometry';
 import {
   createTileInstanceGeometry,
   createTileInstancedMesh,
@@ -36,7 +36,7 @@ function scene() {
   exportRoot.add(mesh);
 
   const instance: DesignInstanceJson = { type: 'DesignInstance', placements };
-  const groutGeometry = buildGroutGeometry(groutBlocks(instance, new Map([[tile.id, tile]]), 0.0015));
+  const groutGeometry = buildGroutGeometry(groutPlan(instance, new Map([[tile.id, tile]]), 0.0015));
   const groutMaterial = createGroutMaterial(maps);
   const grout = new Mesh(groutGeometry, groutMaterial);
   grout.name = 'grout';
@@ -65,6 +65,9 @@ describe('export with rounded tiles and grout', () => {
     expect(grout).toBeDefined();
     expect(grout.geometry).toBe(groutGeometry);
     expect(grout.material).toBe(groutMaterial);
+    expect(groutGeometry.index!.count).toBeGreaterThan(0);
+    // Depth bias does not survive export, so the grout must not rely on it.
+    expect(groutMaterial.polygonOffset).toBe(false);
     expect(Object.keys(grout.geometry.attributes).sort()).toEqual(['normal', 'position', 'uv']);
   });
 });

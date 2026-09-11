@@ -128,3 +128,24 @@ export function mat3ToSvgMatrix(m: Mat3Json): string {
   const e = m.elements;
   return `matrix(${e[0]} ${e[1]} ${e[3]} ${e[4]} ${e[6]} ${e[7]})`;
 }
+
+/** Inverse of an affine Mat3Json (bottom row 0 0 1), or null when it is singular. */
+export function invertMat3(m: Mat3Json): Mat3Json | null {
+  const [a, b, , c, d, , tx, ty] = m.elements;
+  const det = a * d - c * b;
+  if (!(Math.abs(det) > 1e-12)) return null;
+  return {
+    type: 'Mat3',
+    elements: [
+      d / det,
+      -b / det,
+      0,
+      -c / det,
+      a / det,
+      0,
+      (c * ty - d * tx) / det,
+      (b * tx - a * ty) / det,
+      1,
+    ],
+  };
+}

@@ -8,7 +8,12 @@ import {
   type Mat3Json,
 } from '@/domain/mat3';
 import { createTileDefinition } from '@/domain/tile';
-import { createRoundedSlabGeometry, createTileBaseGeometry } from './rounded-slab-geometry';
+import {
+  createRoundedSlabGeometry,
+  createTileBaseGeometry,
+  ROUNDED_SEGMENTS_PER_QUARTER,
+  roundedRectOutline,
+} from './rounded-slab-geometry';
 import { decomposePlacement } from './tile-instances';
 
 const L = 0.6;
@@ -104,6 +109,39 @@ describe('createRoundedSlabGeometry', () => {
   it('uses the plain box at zero radius, keeping square-tile parity untouched', () => {
     expect(createTileBaseGeometry(L, W, T, 0)).toBeInstanceOf(BoxGeometry);
     expect(createTileBaseGeometry(L, W, T, R)).not.toBeInstanceOf(BoxGeometry);
+  });
+});
+
+describe('roundedRectOutline', () => {
+  const n = ROUNDED_SEGMENTS_PER_QUARTER;
+
+  it('is the four corners at zero radius and 4·(n + 1) points otherwise', () => {
+    expect(roundedRectOutline(L, W, 0)).toHaveLength(4);
+    expect(roundedRectOutline(L, W, 1e-7)).toHaveLength(4);
+    expect(roundedRectOutline(L, W, R)).toHaveLength(4 * (n + 1));
+  });
+
+  it.each([0, R, W / 2])('winds counter-clockwise inside the tile, without repeated points: r = %s', (r) => {
+    const ring = roundedRectOutline(L, W, r);
+    let area = 0;
+    ring.forEach((p, k) => {
+      const q = ring[(k + 1) % ring.length]!;
+      area += p.x * q.y - q.x * p.y;
+      expect(Math.hypot(q.x - p.x, q.y - p.y)).toBeGreaterThan(1e-12);
+      expect(Math.abs(p.x)).toBeLessThanOrEqual(L / 2 + 1e-12);
+      expect(Math.abs(p.y)).toBeLessThanOrEqual(W / 2 + 1e-12);
+    });
+    expect(area).toBeGreaterThan(0);
+  });
+
+  it('is exactly the ring the slab walls stand on', () => {
+    const ring = roundedRectOutline(L, W, R);
+    const top = vertices(geometry).slice(ring.length, 2 * ring.length);
+    ring.forEach((p, k) => {
+      expect(top[k]!.p.x).toBeCloseTo(p.x, F32);
+      expect(top[k]!.p.y).toBeCloseTo(p.y, F32);
+      expect(top[k]!.p.z).toBeCloseTo(T / 2, F32);
+    });
   });
 });
 

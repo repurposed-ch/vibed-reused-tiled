@@ -17,7 +17,7 @@ import {
   buildGroutGeometry,
   createGroutMaterial,
   GROUT_BAKE_PERIOD,
-  groutBlocks,
+  groutPlan,
 } from './grout-geometry';
 import {
   createTileInstanceGeometry,
@@ -169,8 +169,8 @@ function TileInstances({
 }
 
 /**
- * All grout as one mesh under the tiles, its surface recessed by the joint depth. It sits in
- * the export root, so GLB and USDZ carry it too.
+ * All grout as one mesh: a surface with the tiles cut out, recessed by the joint depth. It sits
+ * in the export root, so GLB and USDZ carry it too.
  */
 function GroutMesh({
   instance,
@@ -184,7 +184,7 @@ function GroutMesh({
   joint: ProjectJointJson;
 }) {
   const geometry = useMemo(
-    () => buildGroutGeometry(groutBlocks(instance, tileMap, joint.depth)),
+    () => buildGroutGeometry(groutPlan(instance, tileMap, joint.depth)),
     [instance, tileMap, joint.depth],
   );
   useEffect(
@@ -225,7 +225,8 @@ function GroutMesh({
     [material],
   );
 
-  if (instance.placements.length === 0) return null;
+  // Square tiles with no joint leave no grout; an empty mesh would export as empty accessors.
+  if ((geometry.index?.count ?? 0) === 0) return null;
   return (
     <mesh
       geometry={geometry}

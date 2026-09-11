@@ -5,6 +5,80 @@ export const ROUNDED_SEGMENTS_PER_QUARTER = 8;
 /** Radii below this are treated as square corners. */
 const MIN_RADIUS = 1e-6;
 
+export type OutlinePoint = { x: number; y: number; nx: number; ny: number };
+
+/**
+ * The plan outline of a centred rounded rectangle, as four counter-clockwise corner arcs of
+ * `segments + 1` points each, starting in the +x +y quadrant. The first and last point of each
+ * arc are its tangent points on the straight sides; `nx, ny` is the outward radial normal.
+ *
+ * The one source of the rounded outline: the tile slab's walls and the holes grout leaves for
+ * the tiles both come from here, so they coincide exactly.
+ *
+ * At a radius of `MIN_RADIUS` or less the radius is 0 and each "arc" is its single corner point.
+ */
+export function roundedRectQuarters(
+  length: number,
+  width: number,
+  radius: number,
+  segments = ROUNDED_SEGMENTS_PER_QUARTER,
+): { radius: number; quarters: OutlinePoint[][] } {
+  const r = Math.min(Math.max(radius, 0), Math.min(length, width) / 2 - MIN_RADIUS);
+  const hx = length / 2;
+  const hy = width / 2;
+  const signs: Array<[number, number]> = [
+    [1, 1],
+    [-1, 1],
+    [-1, -1],
+    [1, -1],
+  ];
+  if (!(r > MIN_RADIUS)) {
+    return {
+      radius: 0,
+      quarters: signs.map(([sx, sy]) => [{ x: sx * hx, y: sy * hy, nx: sx * Math.SQRT1_2, ny: sy * Math.SQRT1_2 }]),
+    };
+  }
+  const n = Math.max(1, Math.floor(segments));
+
+  // Corner centres in counter-clockwise order, starting in the +x +y quadrant.
+  const centres: Array<[number, number]> = [
+    [hx - r, hy - r],
+    [-(hx - r), hy - r],
+    [-(hx - r), -(hy - r)],
+    [hx - r, -(hy - r)],
+  ];
+  const quarters = centres.map(([cx, cy], q) => {
+    const arc: OutlinePoint[] = [];
+    for (let k = 0; k <= n; k += 1) {
+      const angle = ((q + k / n) * Math.PI) / 2;
+      const nx = Math.cos(angle);
+      const ny = Math.sin(angle);
+      arc.push({ x: cx + r * nx, y: cy + r * ny, nx, ny });
+    }
+    return arc;
+  });
+  return { radius: r, quarters };
+}
+
+/** `roundedRectQuarters` as one counter-clockwise ring, without consecutive duplicates. */
+export function roundedRectOutline(
+  length: number,
+  width: number,
+  radius: number,
+  segments = ROUNDED_SEGMENTS_PER_QUARTER,
+): OutlinePoint[] {
+  const ring: OutlinePoint[] = [];
+  for (const p of roundedRectQuarters(length, width, radius, segments).quarters.flat()) {
+    const last = ring[ring.length - 1];
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) <= 1e-12) continue;
+    ring.push(p);
+  }
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (ring.length > 1 && first && last && Math.hypot(first.x - last.x, first.y - last.y) <= 1e-12) ring.pop();
+  return ring;
+}
+
 /**
  * A centred tile slab with rounded plan-view corners.
  *
@@ -27,28 +101,8 @@ export function createRoundedSlabGeometry(
   radius: number,
   segments = ROUNDED_SEGMENTS_PER_QUARTER,
 ): BufferGeometry {
-  const r = Math.min(Math.max(radius, 0), Math.min(length, width) / 2 - MIN_RADIUS);
-  const hx = length / 2;
-  const hy = width / 2;
   const hz = thickness / 2;
-  const n = Math.max(1, Math.floor(segments));
-
-  // Corner centres in counter-clockwise order, starting in the +x +y quadrant.
-  const centres: Array<[number, number]> = [
-    [hx - r, hy - r],
-    [-(hx - r), hy - r],
-    [-(hx - r), -(hy - r)],
-    [hx - r, -(hy - r)],
-  ];
-  const ring: Array<{ x: number; y: number; nx: number; ny: number }> = [];
-  centres.forEach(([cx, cy], q) => {
-    for (let k = 0; k <= n; k += 1) {
-      const angle = ((q + k / n) * Math.PI) / 2;
-      const nx = Math.cos(angle);
-      const ny = Math.sin(angle);
-      ring.push({ x: cx + r * nx, y: cy + r * ny, nx, ny });
-    }
-  });
+  const ring = roundedRectOutline(length, width, radius, segments);
 
   const positions: number[] = [];
   const normals: number[] = [];
