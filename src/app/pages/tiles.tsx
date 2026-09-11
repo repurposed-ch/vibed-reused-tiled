@@ -1,8 +1,15 @@
 import {
+  cornerRadiusMetres,
   createTileDefinition,
-  DEFAULT_PALETTE_C,
+  describeFit,
+  fitTile,
+  formatMm,
   hasCompleteRhythm,
+  innermostTileGrid,
+  MAX_CORNER_ROUNDING,
   tileDisplayColor,
+  widenedJoint,
+  type TileGridJson,
   type FacadeSide,
   type MaterialDefinitionJson,
   type TileColorJson,
@@ -11,6 +18,7 @@ import {
 import { bakeInputFromTile, bakeMaterialTexture } from '@/render/materials';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { TileColorEditor } from '../components/tile-color-editor';
 import { useProject } from '../project-context';
 
 const SIDES: FacadeSide[] = ['south', 'east', 'north', 'west'];
@@ -100,6 +108,8 @@ function TilePreview({
           y={pad}
           width={w}
           height={h}
+          rx={cornerRadiusMetres(tile) * scale}
+          ry={cornerRadiusMetres(tile) * scale}
           fill={textureUrl ? `url(#${patternId})` : fallback}
           stroke="#f3ebe1"
           strokeWidth={1.5}
@@ -140,8 +150,48 @@ function TilePreview({
   );
 }
 
+type FitStatus = { kind: 'ok' | 'warning' | 'error'; message: string };
+
+/**
+ * How a tile fits the tile schema's grid: checked in the orientations the schema actually uses
+ * for it (both, when it is unused), because a tile placed turned that is too large turned is
+ * broken now even if it would fit upright.
+ */
+function tileFitStatus(tile: TileDefinitionJson, grid: TileGridJson | undefined): FitStatus | null {
+  if (!grid) return null;
+  const used = grid.instances.filter((instance) => instance.tileDefinitionId === tile.id);
+  const orientations = used.length > 0 ? [...new Set(used.map((i) => i.rotated))] : [false, true];
+  const fits = orientations.map((rotated) => ({ rotated, fit: fitTile(tile, grid.cell, grid.joint, rotated) }));
+  const turned = (rotated: boolean) => (rotated ? ' (turned)' : '');
+
+  const bad = fits.filter((f) => f.fit.fit === 'over' || f.fit.fit === 'tooSmall');
+  if (used.length > 0 ? bad.length > 0 : bad.length === fits.length) {
+    const first = bad[0]!;
+    return {
+      kind: 'error',
+      message: `${describeFit(`${tile.name}${turned(first.rotated)}`, first.fit)}${
+        used.length > 0 ? ' The fill leaves it out and uses fallback tiles in its place.' : ''
+      }`,
+    };
+  }
+
+  const under = fits.find((f) => f.fit.fit === 'under');
+  if (under) {
+    const slack = Math.max(under.fit.slack.x, under.fit.slack.y);
+    const joint = widenedJoint(grid.joint, slack);
+    return {
+      kind: 'warning',
+      message: `${tile.name}${turned(under.rotated)} is ${formatMm(slack)} under its ${under.fit.iSpan}×${under.fit.jSpan} footprint. It is centred, so the joints beside it widen to ${formatMm(joint.min)}–${formatMm(joint.max)}.`,
+    };
+  }
+
+  const exact = fits.find((f) => f.fit.fit === 'exact')!;
+  return { kind: 'ok', message: `Fits its ${exact.fit.iSpan}×${exact.fit.jSpan} footprint.` };
+}
+
 export function TilesPage() {
   const { project, updateProject } = useProject();
+  const grid = project.tileSchema ? innermostTileGrid(project.tileSchema) : undefined;
 
   const updateTile = (id: string, patch: Partial<TileDefinitionJson>) => {
     updateProject((p) => ({
@@ -259,139 +309,7 @@ export function TilesPage() {
                     </div>
                   </div>
 
-                  <div className="field">
-                    <label>Color</label>
-                    <div className="row" style={{ gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <button
-                        type="button"
-                        className={tile.color.mode === 'brightness' ? 'btn primary' : 'btn'}
-                        onClick={() =>
-                          setColor(tile.id, {
-                            mode: 'brightness',
-                            color: tileDisplayColor(tile.color),
-                          })
-                        }
-                      >
-                        Brightness
-                      </button>
-                      <button
-                        type="button"
-                        className={tile.color.mode === 'palette' ? 'btn primary' : 'btn'}
-                        onClick={() => {
-                          const base = tileDisplayColor(tile.color);
-                          setColor(tile.id, {
-                            mode: 'palette',
-                            colors:
-                              tile.color.mode === 'palette'
-                                ? tile.color.colors
-                                : [base, base, base],
-                            c:
-                              tile.color.mode === 'palette'
-                                ? tile.color.c
-                                : [...DEFAULT_PALETTE_C],
-                          });
-                        }}
-                      >
-                        Palette (3)
-                      </button>
-                    </div>
-                    {tile.color.mode === 'brightness' ? (
-                      <div className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-                        <input
-                          type="color"
-                          value={
-                            tile.color.color.startsWith('#') ? tile.color.color : '#c4a574'
-                          }
-                          onChange={(e) =>
-                            setColor(tile.id, { mode: 'brightness', color: e.target.value })
-                          }
-                        />
-                        <span className="mono muted">{tile.color.color}</span>
-                        <span className="muted" style={{ fontSize: '0.8rem' }}>
-                          SDF → brightness
-                        </span>
-                      </div>
-                    ) : (
-                      (() => {
-                        const paletteColors = tile.color.colors;
-                        const paletteC = tile.color.c ?? DEFAULT_PALETTE_C;
-                        return (
-                          <div className="stack" style={{ gap: '0.75rem' }}>
-                            <div className="row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
-                              {(['a', 'b', 'd'] as const).map((label, i) => {
-                                const hex = paletteColors[i]!;
-                                return (
-                                  <div key={label} className="field">
-                                    <label>palette {label}</label>
-                                    <input
-                                      type="color"
-                                      value={hex.startsWith('#') ? hex : '#c4a574'}
-                                      onChange={(e) => {
-                                        const colors: [string, string, string] = [
-                                          paletteColors[0],
-                                          paletteColors[1],
-                                          paletteColors[2],
-                                        ];
-                                        colors[i] = e.target.value;
-                                        setColor(tile.id, {
-                                          mode: 'palette',
-                                          colors,
-                                          c: paletteC,
-                                        });
-                                      }}
-                                    />
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="stack" style={{ gap: '0.4rem' }}>
-                              <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
-                                Quilez palette(t, a, b, c, d) — adjust c with sliders
-                              </p>
-                              {(['x', 'y', 'z'] as const).map((axis, i) => (
-                                <div
-                                  key={axis}
-                                  className="row"
-                                  style={{ alignItems: 'center', gap: '0.5rem' }}
-                                >
-                                  <label
-                                    className="mono"
-                                    style={{ width: '2.5rem', margin: 0, fontSize: '0.8rem' }}
-                                  >
-                                    c.{axis}
-                                  </label>
-                                  <input
-                                    type="range"
-                                    min={0}
-                                    max={2}
-                                    step={0.01}
-                                    value={paletteC[i]!}
-                                    style={{ flex: 1 }}
-                                    onChange={(e) => {
-                                      const next: [number, number, number] = [
-                                        paletteC[0],
-                                        paletteC[1],
-                                        paletteC[2],
-                                      ];
-                                      next[i] = Number(e.target.value);
-                                      setColor(tile.id, {
-                                        mode: 'palette',
-                                        colors: paletteColors,
-                                        c: next,
-                                      });
-                                    }}
-                                  />
-                                  <span className="mono muted" style={{ width: '3rem' }}>
-                                    {paletteC[i]!.toFixed(2)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
+                  <TileColorEditor value={tile.color} onChange={(color) => setColor(tile.id, color)} />
 
                   <div className="row">
                     {(['length', 'width', 'thickness'] as const).map((dim) => (
@@ -409,6 +327,49 @@ export function TilesPage() {
                       </div>
                     ))}
                   </div>
+
+                  <div className="stack" style={{ gap: '0.3rem' }}>
+                    <span
+                      className="muted"
+                      style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}
+                    >
+                      Corner rounding
+                    </span>
+                    <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+                      {/* Range inputs stay outside .field, whose padding and border wreck the track. */}
+                      <input
+                        type="range"
+                        min={0}
+                        max={MAX_CORNER_ROUNDING}
+                        step={0.005}
+                        value={tile.cornerRounding ?? 0}
+                        style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+                        onChange={(e) => updateTile(tile.id, { cornerRounding: Number(e.target.value) })}
+                      />
+                      <span className="mono muted" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                        {((tile.cornerRounding ?? 0) * 100).toFixed(1)} % ·{' '}
+                        {(cornerRadiusMetres(tile) * 1000).toFixed(1)} mm
+                      </span>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const fit = tileFitStatus(tile, grid);
+                    if (!fit) return null;
+                    if (fit.kind === 'error') return <p className="error">{fit.message}</p>;
+                    return (
+                      <p
+                        className="muted"
+                        style={{
+                          margin: 0,
+                          fontSize: '0.8rem',
+                          ...(fit.kind === 'warning' ? { color: '#d9773a' } : {}),
+                        }}
+                      >
+                        {fit.message}
+                      </p>
+                    );
+                  })()}
 
                   <div className="field">
                     <label>Edge rhythm (texture + composition)</label>

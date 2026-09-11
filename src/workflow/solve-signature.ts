@@ -20,6 +20,9 @@ export function solveSignature(project: TilingProjectJson, seed: number): string
     tiles: project.tileDefinitions.map((tile) => ({
       ...tile,
       texture: undefined,
+      // Rounding changes how a tile is drawn, never where it goes. Hashing it would re-solve
+      // on every slider tick and hand every placement a fresh id.
+      cornerRounding: undefined,
     })),
     stock: project.stock,
     designFamily: project.designFamily,

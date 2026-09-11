@@ -24,6 +24,7 @@ export function View2dPage() {
               instance={project.instance}
               tiles={project.tileDefinitions}
               boundaries={project.boundaries}
+              joint={project.joint}
               scale={70}
             />
           </div>

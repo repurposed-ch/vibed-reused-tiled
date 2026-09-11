@@ -1,5 +1,5 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
-import type { PlacementJson } from '@/domain/instance';
+import type { InstanceGridJson, PlacementJson } from '@/domain/instance';
 import {
   multiplyMat3,
   rotationMat3,
@@ -8,7 +8,14 @@ import {
   type Mat3Json,
 } from '@/domain/mat3';
 import type { TileDefinitionJson } from '@/domain/tile';
-import { spanFor, toFrame2, type IntVec2, type TileSchemaJson } from '@/domain/tile-grid';
+import {
+  fitTileInSpan,
+  sanitizeJoint,
+  spanFor,
+  toFrame2,
+  type IntVec2,
+  type TileSchemaJson,
+} from '@/domain/tile-grid';
 import { Epsilon } from '@/math/core/epsilon';
 import { Vec2 } from '@/math/core/vec2';
 import { Polygon2 } from '@/math/geometry/regions/polygon2';
@@ -51,6 +58,11 @@ export type TileGridFillStats = {
   fallbackSubstitutedFor?: string;
   /** Tiles placed beyond the sampled stock, per tile definition. */
   shortfall: Record<string, number>;
+  /**
+   * Occurrences not placed because the tile is larger than its stored footprint, per tile
+   * definition. Their cells are filled with fallback tiles instead of overlapping neighbours.
+   */
+  oversized: Record<string, number>;
 };
 
 export type TileGridFillResult = {
@@ -58,6 +70,8 @@ export type TileGridFillResult = {
   /** Position matrices per tile type. */
   byTile: Record<string, Mat3Json[]>;
   stats: TileGridFillStats;
+  /** The base grid the placements' `cell` blocks refer to; null when nothing was filled. */
+  grid: InstanceGridJson | null;
 };
 
 export type TileGridFillInput = {
@@ -153,7 +167,16 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     return {
       placements: [],
       byTile: {},
-      stats: { cells: 0, wholeTiles: 0, fallbackTiles: 0, cutTiles: 0, unfilled: 0, shortfall: {} },
+      grid: null,
+      stats: {
+        cells: 0,
+        wholeTiles: 0,
+        fallbackTiles: 0,
+        cutTiles: 0,
+        unfilled: 0,
+        shortfall: {},
+        oversized: {},
+      },
     };
   }
 
@@ -170,6 +193,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   );
 
   const { x: cellX, y: cellY } = tileGrid.cell;
+  const joint = sanitizeJoint(tileGrid.joint);
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -325,9 +349,14 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     flip: Mirror,
     span: { iSpan: number; jSpan: number },
     moduleId?: string,
-  ): boolean => {
+  ): 'placed' | 'missing' | 'oversized' => {
     const tile = tiles.get(tileId);
-    if (!tile) return false;
+    if (!tile) return 'missing';
+
+    // Stored spans are never re-derived, so a tile edited larger — or a cell or joint edited
+    // smaller — can leave a span too small for it. Placing it would overlap its neighbours.
+    // An undersized tile is fine: the inset below centres it, and its joints widen.
+    if (fitTileInSpan(tile, tileGrid.cell, joint, rotated, span).fit === 'over') return 'oversized';
 
     const drawnWidth = rotated ? tile.width : tile.length;
     const drawnHeight = rotated ? tile.length : tile.width;
@@ -341,10 +370,16 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
         orientationMat3(tile, rotated, flip),
       ),
     );
-    placements.push({ id: crypto.randomUUID(), tileDefinitionId: tileId, mat3, moduleId });
+    placements.push({
+      id: crypto.randomUUID(),
+      tileDefinitionId: tileId,
+      mat3,
+      moduleId,
+      cell: { i: cell.i, j: cell.j, iSpan: span.iSpan, jSpan: span.jSpan },
+    });
     (byTile[tileId] ??= []).push(mat3);
     used.set(tileId, (used.get(tileId) ?? 0) + 1);
-    return true;
+    return 'placed';
   };
 
   /**
@@ -355,7 +390,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
    * here rather than trusted.
    */
   const coversOneCell = (tile: TileDefinitionJson): boolean => {
-    const span = spanFor(tile, tileGrid.cell, tileGrid.joint, false);
+    const span = spanFor(tile, tileGrid.cell, joint, false);
     return span?.iSpan === 1 && span.jSpan === 1;
   };
 
@@ -380,6 +415,10 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   let fallbackTiles = 0;
   let cutTiles = 0;
   let unfilled = 0;
+  const oversized: Record<string, number> = {};
+  const countOversized = (tileId: string) => {
+    oversized[tileId] = (oversized[tileId] ?? 0) + 1;
+  };
 
   for (const [key, occurrence] of occurrences) {
     const area = occurrence.iSpan * occurrence.jSpan;
@@ -387,49 +426,51 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     if (area === 1) {
       // A unit tile is placed wherever its cell touches the polygon; the ones the
       // boundary crosses are the cut tiles.
-      if (
-        emit(
-          occurrence.tileDefinitionId,
-          occurrence.touched[0]!,
-          occurrence.rotated,
-          occurrence.flip,
-          { iSpan: 1, jSpan: 1 },
-          key,
-        )
-      ) {
+      const outcome = emit(
+        occurrence.tileDefinitionId,
+        occurrence.touched[0]!,
+        occurrence.rotated,
+        occurrence.flip,
+        { iSpan: 1, jSpan: 1 },
+        key,
+      );
+      if (outcome === 'placed') {
         if (occurrence.containedCount === 0) cutTiles += 1;
         else wholeTiles += 1;
+        continue;
       }
-      continue;
-    }
+      if (outcome === 'missing') continue;
+      // Oversized for its cell: not placed, so its cell falls through to the fallback below.
+      countOversized(occurrence.tileDefinitionId);
+    } else {
+      const complete = occurrence.touched.length === area && occurrence.containedCount === area;
+      const inStock = remaining(occurrence.tileDefinitionId) >= 1;
 
-    const complete = occurrence.touched.length === area && occurrence.containedCount === area;
-    const inStock = remaining(occurrence.tileDefinitionId) >= 1;
-
-    if (complete && inStock) {
-      if (
-        emit(
+      if (complete && inStock) {
+        const outcome = emit(
           occurrence.tileDefinitionId,
           occurrence.originCell,
           occurrence.rotated,
           occurrence.flip,
           { iSpan: occurrence.iSpan, jSpan: occurrence.jSpan },
           key,
-        )
-      ) {
-        wholeTiles += 1;
-        continue;
+        );
+        if (outcome === 'placed') {
+          wholeTiles += 1;
+          continue;
+        }
+        if (outcome === 'oversized') countOversized(occurrence.tileDefinitionId);
       }
     }
 
-    // Clipped, or out of stock: the polygon still has to be filled, so every
-    // touched cell of this occurrence takes a unit tile instead.
+    // Clipped, out of stock, or too large for its footprint: the polygon still has to be
+    // filled, so every touched cell of this occurrence takes a unit tile instead.
     if (!fallbackId) {
       unfilled += occurrence.touched.length;
       continue;
     }
     for (const cell of occurrence.touched) {
-      if (emit(fallbackId, cell, false, { x: false, y: false }, { iSpan: 1, jSpan: 1 }, key))
+      if (emit(fallbackId, cell, false, { x: false, y: false }, { iSpan: 1, jSpan: 1 }, key) === 'placed')
         fallbackTiles += 1;
     }
   }
@@ -445,6 +486,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   return {
     placements,
     byTile,
+    grid: { frame: frameMat3, cell: { x: cellX, y: cellY }, joint },
     stats: {
       cells: cellCount,
       wholeTiles,
@@ -453,6 +495,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
       unfilled,
       ...(fallbackSubstitutedFor ? { fallbackSubstitutedFor } : {}),
       shortfall,
+      oversized,
     },
   };
 }

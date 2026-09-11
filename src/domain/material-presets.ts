@@ -1,3 +1,4 @@
+import { GROUT_MATERIAL_ID } from './joint';
 import { createMaterialDefinition, type MaterialDefinitionJson, type SdfNodeJson } from './material';
 
 const terracottaSdf: SdfNodeJson = {
@@ -260,6 +261,38 @@ const transferPrintSdf: SdfNodeJson = {
   b: { op: 'noise', scale: 12, octaves: 2 },
 };
 
+/**
+ * Grout: fine, even sand. Scales are chosen for the 0.5 m period the joint bakes at — noise
+ * at 160/m gives 80 cells across a bake (about 13 px each at 1024²) — and both land on whole
+ * cells for the usual 0.6 × 0.3 tile too, so it is seamless there as well.
+ */
+const groutSdf: SdfNodeJson = {
+  op: 'remap',
+  inMin: 0,
+  inMax: 1,
+  outMin: 0.3,
+  outMax: 0.8,
+  child: {
+    op: 'mix',
+    t: 0.4,
+    a: { op: 'noise', scale: 160, octaves: 2 },
+    b: { op: 'cells', scale: 100, metric: 'f1', jitter: 1 },
+  },
+};
+
+/** The joint's default material. Also appended to older projects that gain a joint. */
+export function groutMaterial(): MaterialDefinitionJson {
+  return createMaterialDefinition({
+    id: GROUT_MATERIAL_ID,
+    name: 'grout',
+    seed: 19,
+    sdf: groutSdf,
+    // matte and nearly flat: the joint's recess, not its texture, makes it read
+    relief: 0.0003,
+    roughness: [0.95, 0.85],
+  });
+}
+
 export function defaultMaterials(): MaterialDefinitionJson[] {
   return [
     createMaterialDefinition({
@@ -379,6 +412,8 @@ export function defaultMaterials(): MaterialDefinitionJson[] {
       relief: 0.0003,
       roughness: [0.3, 0.2],
     }),
+    // Last, so materials[0] — the fallback when a material is deleted — is unchanged.
+    groutMaterial(),
   ];
 }
 

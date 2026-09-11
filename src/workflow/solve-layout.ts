@@ -312,6 +312,7 @@ function solveFromTileSchema(
   return {
     type: 'DesignInstance',
     placements: result.placements,
+    grid: result.grid ?? undefined,
     meta: {
       seed: input.seed,
       sampledStock: input.sampledStock,
@@ -321,6 +322,8 @@ function solveFromTileSchema(
         wholeTiles: result.stats.wholeTiles,
         fallbackTiles: result.stats.fallbackTiles,
         cutTiles: result.stats.cutTiles,
+        // Occurrences too large for their stored footprint, replaced by fallback tiles.
+        oversizedTiles: Object.values(result.stats.oversized).reduce((a, b) => a + b, 0),
         // Tiles placed beyond the sampled stock. Filling the boundary completely
         // takes priority over staying inside stock, so the overdraw is reported
         // rather than left as a hole.

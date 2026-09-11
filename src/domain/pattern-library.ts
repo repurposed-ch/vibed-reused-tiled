@@ -154,7 +154,15 @@ export function patternLetters(pattern: LibraryPattern): string[] {
  * use. Footprints cannot be rescaled this way — they are what the drawing
  * encodes — which is why {@link NOMINAL_FOOTPRINTS} exists.
  */
-export function patternWithCell(pattern: LibraryPattern, cellX: number, cellY: number): string {
+export function patternWithCell(
+  pattern: LibraryPattern,
+  cellX: number,
+  cellY: number,
+  joint = 0,
+): string {
   const scaled = cellX === cellY ? `cell ${cellX}` : `cell ${cellX} ${cellY}`;
-  return pattern.notation.replace(/^cell .*$/m, scaled);
+  // With a joint the cell is unit + joint, so the notation must say so: without the header
+  // the parser assumes joint 0 and every tile comes out undersized by exactly the joint.
+  const header = joint > 0 ? `${scaled}\njoint ${joint}` : scaled;
+  return pattern.notation.replace(/^joint .*\n?/m, '').replace(/^cell .*$/m, header);
 }

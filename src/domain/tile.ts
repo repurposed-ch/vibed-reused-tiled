@@ -28,6 +28,9 @@ export const TileColorJsonSchema = z.discriminatedUnion('mode', [
 
 export type TileColorJson = z.infer<typeof TileColorJsonSchema>;
 
+/** Corner rounding is capped at 10% of the tile's shorter side. */
+export const MAX_CORNER_ROUNDING = 0.1;
+
 const RhythmObjectSchema = z
   .object({
     south: RhythmSideJsonSchema.optional(),
@@ -63,6 +66,11 @@ export const TileDefinitionJsonSchema = z.object({
   texture: z.string().min(1).optional(),
   /** None → continuous UV; all four sides → edged UV. */
   rhythm: RhythmObjectSchema.optional(),
+  /**
+   * Plan-view corner rounding as a fraction of min(length, width), 0–0.1. Stored as a ratio
+   * rather than metres so it stays valid when the tile's size changes.
+   */
+  cornerRounding: z.number().min(0).max(MAX_CORNER_ROUNDING).default(0),
 });
 
 export type TileDefinitionJson = z.infer<typeof TileDefinitionJsonSchema>;
@@ -70,6 +78,18 @@ export type TileDefinitionJson = z.infer<typeof TileDefinitionJsonSchema>;
 /** Flat hex used for 2D layout fill / UI chrome. */
 export function tileDisplayColor(color: TileColorJson): string {
   return color.mode === 'brightness' ? color.color : color.colors[1];
+}
+
+/** Corner radius in metres, from the stored ratio. */
+export function cornerRadiusMetres(tile: {
+  length: number;
+  width: number;
+  cornerRounding?: number;
+}): number {
+  const raw = tile.cornerRounding;
+  const ratio =
+    typeof raw === 'number' && Number.isFinite(raw) ? Math.min(Math.max(raw, 0), MAX_CORNER_ROUNDING) : 0;
+  return ratio * Math.min(tile.length, tile.width);
 }
 
 export function hasCompleteRhythm(
@@ -101,5 +121,6 @@ export function createTileDefinition(
     color,
     texture: partial?.texture,
     rhythm: partial?.rhythm,
+    cornerRounding: partial?.cornerRounding ?? 0,
   };
 }

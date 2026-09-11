@@ -130,12 +130,12 @@ a a a b`,
     expect(result.error).toMatch(/Missing "cell/);
   });
 
-  it('reports a format that is not a whole number of cells', () => {
+  it('reports a format that is too large for its footprint, in millimetres', () => {
     const odd = createTileDefinition({ id: 'a', name: 'Odd', length: 0.3, width: 0.3 });
     const result = parsePattern(`cell 0.25\na`, patternLegend([odd]));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toMatch(/not a whole number of/);
+    expect(result.error).toMatch(/50 mm larger than its 1×1 footprint/);
   });
 
   it('carries mirror and joint headers through', () => {

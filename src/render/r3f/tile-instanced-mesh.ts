@@ -1,12 +1,13 @@
 import {
-  BoxGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
   MeshStandardMaterial,
+  type BufferGeometry,
   type Material,
   type Texture,
 } from 'three';
+import { createTileBaseGeometry } from './rounded-slab-geometry';
 import type { TileInstanceData } from './tile-instances';
 
 /** Per-instance vec3: offset u, offset v, mirrorU (0 or 1). */
@@ -80,14 +81,18 @@ export function createTileInstanceMaterial(maps: TileMaps | null): MeshStandardM
   return material;
 }
 
-/** A centred box (instance matrices carry the centre) with room for `count` UV transforms. */
+/**
+ * A centred tile slab (instance matrices carry the centre) with room for `count` UV transforms:
+ * a plain box, or a rounded slab when `cornerRadius` is set.
+ */
 export function createTileInstanceGeometry(
   length: number,
   width: number,
   thickness: number,
   count: number,
-): BoxGeometry {
-  const geometry = new BoxGeometry(length, width, thickness);
+  cornerRadius = 0,
+): BufferGeometry {
+  const geometry = createTileBaseGeometry(length, width, thickness, cornerRadius);
   const uvXform = new InstancedBufferAttribute(new Float32Array(Math.max(count, 0) * 3), 3);
   uvXform.setUsage(DynamicDrawUsage);
   geometry.setAttribute(INSTANCE_UV_ATTRIBUTE, uvXform);
@@ -95,7 +100,7 @@ export function createTileInstanceGeometry(
 }
 
 export function createTileInstancedMesh(
-  geometry: BoxGeometry,
+  geometry: BufferGeometry,
   material: Material,
   count: number,
   tileDefinitionId: string,

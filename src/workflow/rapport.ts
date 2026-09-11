@@ -9,6 +9,7 @@ import {
   type TileGridInstanceJson,
   type TileGridJson,
   type TileSchemaJson,
+  sanitizeJoint,
 } from '@/domain/tile-grid';
 import { mulberry32, type Rng } from './sample-stock';
 
@@ -66,6 +67,11 @@ export type FindRapportOptions = {
   maxHeight?: number;
   /** Dimension quantisation in metres. Defaults to 1 mm. */
   unitResolution?: number;
+  /**
+   * Joint between tiles, in metres. A cell is unit + joint, so the grid unit is found over
+   * `dimension + joint`: 0.29 m and 0.14 m tiles with a 0.01 m joint share a 0.15 m cell.
+   */
+  joint?: number;
   /** Cap on module cells; guards the backtracking search. Defaults to 260. */
   maxModuleCells?: number;
   /** Randomised retries per candidate size. Defaults to 4. */
@@ -92,11 +98,19 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
 
-/** Largest grid cell that divides every tile dimension without remainder. */
-export function gridUnit(tiles: TileDefinitionJson[], resolution = DEFAULT_UNIT_RESOLUTION): number {
+/**
+ * Largest grid cell that divides every tile dimension plus one joint without remainder. With a
+ * joint the cell is unit + joint, so the divisor is taken over `dimension + joint`.
+ */
+export function gridUnit(
+  tiles: TileDefinitionJson[],
+  resolution = DEFAULT_UNIT_RESOLUTION,
+  joint = 0,
+): number {
+  const j = sanitizeJoint(joint);
   const steps = tiles.flatMap((t) => [
-    Math.round(t.length / resolution),
-    Math.round(t.width / resolution),
+    Math.round((t.length + j) / resolution),
+    Math.round((t.width + j) / resolution),
   ]);
   const g = steps.reduce((a, b) => gcd(a, b));
   return g * resolution;
@@ -218,7 +232,9 @@ export function findRapportModule(options: FindRapportOptions): RapportModule | 
     attempts = DEFAULT_ATTEMPTS,
     tolerance = DEFAULT_TOLERANCE,
     seed = 1,
+    joint: rawJoint = 0,
   } = options;
+  const joint = sanitizeJoint(rawJoint);
 
   if (tiles.length === 0) return null;
 
@@ -243,11 +259,11 @@ export function findRapportModule(options: FindRapportOptions): RapportModule | 
   if (weightSum <= 0) return null;
   const targetFractions = weights.map((w) => w / weightSum);
 
-  const unit = gridUnit(requested, unitResolution);
+  const unit = gridUnit(requested, unitResolution, joint);
   const candidates: Candidate[] = [];
   requested.forEach((tile, index) => {
-    const lengthUnits = Math.round(tile.length / unit);
-    const widthUnits = Math.round(tile.width / unit);
+    const lengthUnits = Math.round((tile.length + joint) / unit);
+    const widthUnits = Math.round((tile.width + joint) / unit);
     candidates.push({ index, widthUnits: lengthUnits, heightUnits: widthUnits, rotated: false });
     if (lengthUnits !== widthUnits) {
       candidates.push({ index, widthUnits, heightUnits: lengthUnits, rotated: true });

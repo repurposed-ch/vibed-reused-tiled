@@ -18,7 +18,7 @@ import {
   patternLegend,
   type PatternLegendEntry,
 } from '@/domain/pattern-notation';
-import { spanFor } from '@/domain/tile-grid';
+import { fitTile, formatMm, sanitizeJoint, spanFor } from '@/domain/tile-grid';
 import {
   getProvider,
   providerRequiresApiKey,
@@ -236,6 +236,8 @@ async function callLlmText(args: {
 export type TileSchemaAssistRequest = {
   prompt: string;
   tileDefinitions: TileDefinitionJson[];
+  /** Joint between tiles in metres; the cell becomes the smallest format plus this. */
+  joint?: number;
   /** Pattern in notation form, when revising rather than starting fresh. */
   current?: string;
 };
@@ -265,10 +267,15 @@ function legendLines(
   return legend.map((entry) => {
     const upright = spanFor(entry.tile, cell, joint, false);
     const turned = spanFor(entry.tile, cell, joint, true);
+    // An undersized format still has a footprint; say so, so the model does not second-guess it.
+    const under = (rotated: boolean): string => {
+      const fit = fitTile(entry.tile, cell, joint, rotated);
+      return fit.fit === 'under' ? ` (${formatMm(Math.max(fit.slack.x, fit.slack.y))} under)` : '';
+    };
     const shapes = [
-      upright ? `${entry.letter} = ${upright.iSpan}x${upright.jSpan} cells` : null,
+      upright ? `${entry.letter} = ${upright.iSpan}x${upright.jSpan} cells${under(false)}` : null,
       turned && (turned.iSpan !== upright?.iSpan || turned.jSpan !== upright?.jSpan)
-        ? `${entry.letter.toUpperCase()} = ${turned.iSpan}x${turned.jSpan} cells`
+        ? `${entry.letter.toUpperCase()} = ${turned.iSpan}x${turned.jSpan} cells${under(true)}`
         : null,
     ].filter(Boolean);
     return `${entry.tile.name} (${entry.tile.length}x${entry.tile.width} m): ${shapes.join(', ') || 'does not fit the cell'}`;
@@ -300,13 +307,14 @@ function buildTileSchemaPrompt(
   request: TileSchemaAssistRequest,
   legend: readonly PatternLegendEntry[],
   cell: { x: number; y: number },
+  joint: number,
 ): string {
-  const examples = patternsForLegend(legend, cell, 0)
+  const examples = patternsForLegend(legend, cell, joint)
     // A one-cell grid teaches nothing, and its single-letter row is exactly what
     // collides with the next block's header when a model echoes it back.
     .filter((pattern) => patternCellCount(pattern) > 1)
     .slice(0, MAX_EXAMPLES)
-    .map((pattern) => `# ${pattern.description}\n${patternWithCell(pattern, cell.x, cell.y)}`);
+    .map((pattern) => `# ${pattern.description}\n${patternWithCell(pattern, cell.x, cell.y, joint)}`);
 
   return [
     'You lay out reused tiles. Reply with ONLY a pattern in the grid notation below.',
@@ -315,7 +323,8 @@ function buildTileSchemaPrompt(
     NOTATION_SPEC,
     '',
     'Formats available (use these letters):',
-    ...legendLines(legend, cell, 0),
+    ...(joint > 0 ? [`Joint: ${joint} m. Keep the "joint ${joint}" header; the cell already includes it.`] : []),
+    ...legendLines(legend, cell, joint),
     '',
     ...(examples.length > 0 ? ['Worked examples:', '', ...examples, ''] : []),
     ...(request.current ? ['Pattern to revise:', request.current, ''] : []),
@@ -360,9 +369,13 @@ export async function assistTileSchemaWith(
   const legend = patternLegend(tiles);
   // Smallest format sets the cell, the way a repeat is built by hand.
   const smallest = [...tiles].sort((a, b) => a.length * a.width - b.length * b.width)[0]!;
-  const cell = { x: smallest.length, y: smallest.width };
+  // A cell is unit + joint. Rounded to the micrometre so the header reads "cell 0.15", not
+  // "cell 0.15000000000000002".
+  const joint = sanitizeJoint(args.request.joint);
+  const micro = (v: number) => Math.round(v * 1e6) / 1e6;
+  const cell = { x: micro(smallest.length + joint), y: micro(smallest.width + joint) };
 
-  let prompt = buildTileSchemaPrompt(args.request, legend, cell);
+  let prompt = buildTileSchemaPrompt(args.request, legend, cell, joint);
   let notation = '';
   let error = 'Assist failed';
 
@@ -382,7 +395,7 @@ export async function assistTileSchemaWith(
     }
 
     notation = stripCodeFences(text);
-    const parsed = parsePattern(notation, legend);
+    const parsed = parsePattern(notation, legend, { joint });
     if (parsed.ok) return { ok: true, schema: parsed.schema, notation };
 
     error = parsed.error;

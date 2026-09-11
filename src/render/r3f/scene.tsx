@@ -1,6 +1,7 @@
 import type { DesignInstanceJson } from '@/domain/instance';
 import type { MaterialDefinitionJson } from '@/domain/material';
-import type { TileDefinitionJson } from '@/domain/tile';
+import { defaultJoint, type ProjectJointJson } from '@/domain/joint';
+import { cornerRadiusMetres, type TileDefinitionJson } from '@/domain/tile';
 import { bakeInputFromTile, getBakedTexture } from '@/render/materials';
 import { OrbitControls } from '@react-three/drei';
 import { type RefObject, useEffect, useLayoutEffect, useMemo } from 'react';
@@ -13,11 +14,20 @@ import {
   type TileVariationSettings,
 } from './tile-instances';
 import {
+  buildGroutGeometry,
+  createGroutMaterial,
+  GROUT_BAKE_PERIOD,
+  groutBlocks,
+} from './grout-geometry';
+import {
   createTileInstanceGeometry,
   createTileInstancedMesh,
   createTileInstanceMaterial,
   writeTileInstances,
 } from './tile-instanced-mesh';
+
+/** Used when no joint is passed, so the default does not churn memos on every render. */
+const FALLBACK_JOINT = defaultJoint();
 
 export function Scene3d({
   instance,
@@ -26,6 +36,7 @@ export function Scene3d({
   rootRef,
   exportRootRef,
   variation = DEFAULT_TILE_VARIATION,
+  joint = FALLBACK_JOINT,
 }: {
   instance: DesignInstanceJson;
   tiles: TileDefinitionJson[];
@@ -35,6 +46,8 @@ export function Scene3d({
   exportRootRef?: RefObject<Group | null>;
   /** Per-tile UV offset and tint for continuous tiles. */
   variation?: TileVariationSettings;
+  /** Grout appearance; its width comes from the instance's grid. */
+  joint?: ProjectJointJson;
 }) {
   const tileMap = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
   const materialMap = useMemo(
@@ -60,6 +73,12 @@ export function Scene3d({
           <meshStandardMaterial color="#2a241e" side={DoubleSide} />
         </mesh>
         <group ref={exportRootRef}>
+          <GroutMesh
+            instance={instance}
+            tileMap={tileMap}
+            materialMap={materialMap}
+            joint={joint}
+          />
           {[...groups.values()].map((data) => {
             const tile = tileMap.get(data.tileDefinitionId);
             if (!tile) return null;
@@ -117,9 +136,10 @@ function TileInstances({
   );
 
   const { length, width, thickness } = tile;
+  const radius = cornerRadiusMetres(tile);
   const geometry = useMemo(
-    () => createTileInstanceGeometry(length, width, thickness, data.count),
-    [length, width, thickness, data.count],
+    () => createTileInstanceGeometry(length, width, thickness, data.count, radius),
+    [length, width, thickness, data.count, radius],
   );
   useEffect(
     () => () => {
@@ -146,4 +166,75 @@ function TileInstances({
   }, [mesh, data]);
 
   return <primitive object={mesh} />;
+}
+
+/**
+ * All grout as one mesh under the tiles, its surface recessed by the joint depth. It sits in
+ * the export root, so GLB and USDZ carry it too.
+ */
+function GroutMesh({
+  instance,
+  tileMap,
+  materialMap,
+  joint,
+}: {
+  instance: DesignInstanceJson;
+  tileMap: ReadonlyMap<string, TileDefinitionJson>;
+  materialMap: ReadonlyMap<string, MaterialDefinitionJson>;
+  joint: ProjectJointJson;
+}) {
+  const geometry = useMemo(
+    () => buildGroutGeometry(groutBlocks(instance, tileMap, joint.depth)),
+    [instance, tileMap, joint.depth],
+  );
+  useEffect(
+    () => () => {
+      geometry.dispose();
+    },
+    [geometry],
+  );
+
+  // The joint's colour object is recreated on every project write, but the texture cache
+  // returns the same entry for the same content, so the material below stays put.
+  const jointMaterial = materialMap.get(joint.materialId);
+  const baked = useMemo(
+    () =>
+      jointMaterial
+        ? getBakedTexture({
+            material: jointMaterial,
+            color: joint.color,
+            length: GROUT_BAKE_PERIOD,
+            width: GROUT_BAKE_PERIOD,
+          })
+        : null,
+    [jointMaterial, joint.color],
+  );
+  const material = useMemo(
+    () =>
+      createGroutMaterial(
+        baked
+          ? { map: baked.texture, normalMap: baked.normalTexture, roughnessMap: baked.roughnessTexture }
+          : null,
+      ),
+    [baked],
+  );
+  useEffect(
+    () => () => {
+      material.dispose();
+    },
+    [material],
+  );
+
+  if (instance.placements.length === 0) return null;
+  return (
+    <mesh
+      geometry={geometry}
+      material={material}
+      castShadow
+      receiveShadow
+      name="grout"
+      userData={{ grout: true }}
+      dispose={null}
+    />
+  );
 }

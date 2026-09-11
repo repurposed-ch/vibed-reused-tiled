@@ -260,21 +260,94 @@ export function extentCells(extent: { iCount: number; jCount: number }): IntVec2
   return cells;
 }
 
-const SPAN_TOLERANCE = 1e-6;
+/**
+ * Oversize beyond float noise is an error. Allowing even half a millimetre here would let
+ * two "barely over" neighbours overlap by a millimetre, and their tops would z-fight in 3D.
+ */
+export const FIT_OVER_TOLERANCE = 1e-6;
 
 /**
- * How many cells a tile actually covers, or null when it does not fit the grid.
+ * Undersize below this counts as exact. It only decides whether the editor warns: an
+ * undersized tile is centred in its footprint either way, so the joints around it widen.
+ */
+export const FIT_UNDER_TOLERANCE = 0.0005;
+
+export type TileFitKind = 'exact' | 'under' | 'over' | 'tooSmall';
+
+export type TileFit = {
+  /** Spans the tile was judged against, always at least 1. */
+  iSpan: number;
+  jSpan: number;
+  fit: TileFitKind;
+  /** Largest tile the footprint holds, `span · cell − joint`, per grid axis. */
+  nominal: { x: number; y: number };
+  /** `nominal − tile` per grid axis: positive when undersized, negative when oversized. */
+  slack: { x: number; y: number };
+};
+
+/**
+ * A joint as a usable number. `ui.schemaDraft` is not zod-parsed, so a draft stored by an
+ * older build can carry no joint at all — which would otherwise make every span NaN.
+ */
+export function sanitizeJoint(joint: unknown): number {
+  return typeof joint === 'number' && Number.isFinite(joint) && joint > 0 ? joint : 0;
+}
+
+/** Judge a tile against a given footprint, e.g. a span stored in the schema. */
+export function fitTileInSpan(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+  rotated: boolean,
+  span: { iSpan: number; jSpan: number },
+): TileFit {
+  const j = sanitizeJoint(joint);
+  const along = rotated ? tile.width : tile.length;
+  const across = rotated ? tile.length : tile.width;
+  const nominal = { x: span.iSpan * cell.x - j, y: span.jSpan * cell.y - j };
+  const slack = { x: nominal.x - along, y: nominal.y - across };
+  let fit: TileFitKind = 'exact';
+  if (slack.x < -FIT_OVER_TOLERANCE || slack.y < -FIT_OVER_TOLERANCE) fit = 'over';
+  else if (slack.x > FIT_UNDER_TOLERANCE || slack.y > FIT_UNDER_TOLERANCE) fit = 'under';
+  return { iSpan: span.iSpan, jSpan: span.jSpan, fit, nominal, slack };
+}
+
+/**
+ * The footprint a tile takes on a grid, and how well it fits it.
  *
- * A tile has exactly two legal footprints — upright and turned — and both are
- * derived, never chosen. The fill draws every tile at its own `length × width`
- * and ignores the stored spans entirely, so a footprint that claims more cells
- * than the tile covers leaves a gap that no validator can see: the cover check
- * only counts claimed cells. Deriving the span is what keeps the two in step.
+ * A cell is the unit tile plus one joint, so a tile spanning k cells is nominally
+ * `k · cell − joint`. The span is the nearest whole number: a tile may be up to half a cell
+ * short on an axis and still take the larger span (undersized — centred, with wider joints),
+ * and past that it is judged against the smaller span, where it is too large. So 0.22 m on a
+ * 0.15 m cell with a 0.01 m joint is 70 mm under a 2×1, while 0.21 m is 70 mm over a 1×1.
+ */
+export function fitTile(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+  rotated: boolean,
+): TileFit {
+  const j = sanitizeJoint(joint);
+  const along = rotated ? tile.width : tile.length;
+  const across = rotated ? tile.length : tile.width;
+  const iSpan = Math.round((along + j) / cell.x);
+  const jSpan = Math.round((across + j) / cell.y);
+  if (iSpan < 1 || jSpan < 1) {
+    const fit = fitTileInSpan(tile, cell, j, rotated, {
+      iSpan: Math.max(1, iSpan),
+      jSpan: Math.max(1, jSpan),
+    });
+    return { ...fit, fit: 'tooSmall' };
+  }
+  return fitTileInSpan(tile, cell, j, rotated, { iSpan, jSpan });
+}
+
+/**
+ * How many cells a tile covers, or null when it has no legal footprint.
  *
- * `+ joint` follows from one joint per cell: `iSpan · cell.x − length = joint`.
- * A format whose size is not a whole number of cells has no legal footprint at
- * all — a 0.30 m tile on a 0.25 m cell — and returns null so the editor can say
- * so instead of quietly rounding.
+ * A tile has exactly two footprints — upright and turned — and both are derived, never
+ * chosen, which is what keeps the stored spans and the drawn tiles in step. An undersized
+ * tile still has a footprint (the fill centres it); an oversized or too-small one does not.
  */
 export function spanFor(
   tile: { length: number; width: number },
@@ -282,32 +355,63 @@ export function spanFor(
   joint: number,
   rotated: boolean,
 ): { iSpan: number; jSpan: number } | null {
-  const along = rotated ? tile.width : tile.length;
-  const across = rotated ? tile.length : tile.width;
-  const iExact = (along + joint) / cell.x;
-  const jExact = (across + joint) / cell.y;
-  const iSpan = Math.round(iExact);
-  const jSpan = Math.round(jExact);
-  if (iSpan < 1 || jSpan < 1) return null;
-  if (Math.abs(iExact - iSpan) > SPAN_TOLERANCE) return null;
-  if (Math.abs(jExact - jSpan) > SPAN_TOLERANCE) return null;
-  return { iSpan, jSpan };
+  const fit = fitTile(tile, cell, joint, rotated);
+  return fit.fit === 'exact' || fit.fit === 'under' ? { iSpan: fit.iSpan, jSpan: fit.jSpan } : null;
 }
+
+export type SpanOption = {
+  rotated: boolean;
+  iSpan: number;
+  jSpan: number;
+  fit: 'exact' | 'under';
+  slack: { x: number; y: number };
+};
 
 /** Both legal footprints of a tile, upright first. A square format has only one. */
 export function spanOptions(
   tile: { length: number; width: number },
   cell: { x: number; y: number },
   joint: number,
-): Array<{ rotated: boolean; iSpan: number; jSpan: number }> {
-  const out: Array<{ rotated: boolean; iSpan: number; jSpan: number }> = [];
-  const upright = spanFor(tile, cell, joint, false);
-  if (upright) out.push({ rotated: false, ...upright });
-  if (tile.length !== tile.width) {
-    const turned = spanFor(tile, cell, joint, true);
-    if (turned) out.push({ rotated: true, ...turned });
-  }
+): SpanOption[] {
+  const out: SpanOption[] = [];
+  const add = (rotated: boolean) => {
+    const f = fitTile(tile, cell, joint, rotated);
+    if (f.fit === 'exact' || f.fit === 'under') {
+      out.push({ rotated, iSpan: f.iSpan, jSpan: f.jSpan, fit: f.fit, slack: f.slack });
+    }
+  };
+  add(false);
+  if (tile.length !== tile.width) add(true);
   return out;
+}
+
+/** The joints beside an undersized tile: half the slack next to an exact neighbour, all of it at worst. */
+export function widenedJoint(joint: number, slack: number): { min: number; max: number } {
+  const j = sanitizeJoint(joint);
+  const s = Math.max(0, slack);
+  return { min: j + s / 2, max: j + s };
+}
+
+export function formatMm(metres: number): string {
+  // Round before choosing the precision: 9.999999 mm is float noise for 10, and deciding on the
+  // raw value would print it as "10.0 mm" beside a clean "10 mm".
+  const tenths = Math.round(metres * 10000) / 10;
+  return Math.abs(tenths) < 10 ? `${tenths.toFixed(1)} mm` : `${Math.round(tenths)} mm`;
+}
+
+/** One-line description of a fit, for editor messages. */
+export function describeFit(name: string, fit: TileFit): string {
+  const size = `${fit.iSpan}×${fit.jSpan}`;
+  switch (fit.fit) {
+    case 'exact':
+      return `${name} fits its ${size} footprint.`;
+    case 'under':
+      return `${name} is ${formatMm(Math.max(fit.slack.x, fit.slack.y))} under its ${size} footprint, so the joints around it widen.`;
+    case 'over':
+      return `${name} is ${formatMm(Math.max(-fit.slack.x, -fit.slack.y))} larger than its ${size} footprint and would overlap its neighbours.`;
+    case 'tooSmall':
+      return `${name} is less than half a cell, so it has no footprint on this grid.`;
+  }
 }
 
 /** The footprint closest to a drawn rectangle. Used to turn a drag into a legal instance. */
@@ -435,6 +539,20 @@ export function masterChain(schema: TileSchemaJson): MasterGridJson[] {
     current = findMasterGrid(schema, current.childId);
   }
   return chain;
+}
+
+/**
+ * The tile grid the master chain actually reaches — the one the fill uses. Undefined when
+ * the chain is broken (a cycle, or too deep), rather than throwing into a render.
+ */
+export function innermostTileGrid(schema: TileSchemaJson): TileGridJson | undefined {
+  try {
+    const chain = masterChain(schema);
+    const innermost = chain[chain.length - 1];
+    return (innermost && findTileGrid(schema, innermost.childId)) ?? schema.tileGrids[0];
+  } catch {
+    return undefined;
+  }
 }
 
 /**

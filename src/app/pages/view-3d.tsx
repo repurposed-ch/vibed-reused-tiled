@@ -72,7 +72,7 @@ export function View3dPage() {
     exportGeneration.current += 1;
     setUrls(null, null);
     setError(null);
-  }, [project.instance, project.tileDefinitions, project.materials, ui.tileVariation]);
+  }, [project.instance, project.tileDefinitions, project.materials, project.joint, ui.tileVariation]);
 
   const ensureExports = async () => {
     const root = exportTarget(exportRootRef.current, rootRef.current);
@@ -376,6 +376,7 @@ export function View3dPage() {
               tiles={project.tileDefinitions}
               materials={project.materials}
               variation={variation}
+              joint={project.joint}
             />
           </Suspense>
         </Canvas>

@@ -4,6 +4,9 @@ import {
   createTileGrid,
   createTileGridInstance,
   createTileSchema,
+  describeFit,
+  fitTile,
+  sanitizeJoint,
   spanFor,
   type IntVec2,
   type MirrorRule,
@@ -174,9 +177,19 @@ function splitBlocks(text: string, letters: ReadonlySet<string>): Block[] {
   );
 }
 
+export type ParsePatternDefaults = {
+  /**
+   * Joint to assume when the notation has no `joint` header. A cell is unit + joint, so a
+   * notation for a grid with a joint but no header would read every tile as undersized by
+   * exactly the joint.
+   */
+  joint?: number;
+};
+
 export function parsePattern(
   text: string,
   legend: readonly PatternLegendEntry[],
+  defaults: ParsePatternDefaults = {},
 ): ParsePatternResult {
   const letters = new Set(legend.map((entry) => entry.letter.toLowerCase()));
   const blocks = splitBlocks(text, letters);
@@ -189,14 +202,18 @@ export function parsePattern(
   // reason — it is the most likely real attempt.
   let lastError = 'No grid rows found in the reply.';
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const result = parseBlock(blocks[index]!, legend);
+    const result = parseBlock(blocks[index]!, legend, defaults);
     if (result.ok) return result;
     if (index === blocks.length - 1) lastError = result.error;
   }
   return { ok: false, error: lastError };
 }
 
-function parseBlock(block: Block, legend: readonly PatternLegendEntry[]): ParsePatternResult {
+function parseBlock(
+  block: Block,
+  legend: readonly PatternLegendEntry[],
+  defaults: ParsePatternDefaults,
+): ParsePatternResult {
   const { headers, rows } = block;
 
   // A line that was clearly meant as a grid row but carried an unknown letter is
@@ -223,7 +240,7 @@ function parseBlock(block: Block, legend: readonly PatternLegendEntry[]): ParseP
     return { ok: false, error: `Could not read cell size from "cell ${cellText}".` };
   }
 
-  const joint = headers.has('joint') ? Number(headers.get('joint')) : 0;
+  const joint = headers.has('joint') ? Number(headers.get('joint')) : sanitizeJoint(defaults.joint);
   if (!Number.isFinite(joint) || joint < 0) {
     return { ok: false, error: `Could not read joint from "joint ${headers.get('joint')}".` };
   }
@@ -259,9 +276,12 @@ function parseBlock(block: Block, legend: readonly PatternLegendEntry[]): ParseP
       const rotated = token !== token.toLowerCase();
       const span = spanFor(tile, { x: cellX, y: cellY }, joint, rotated);
       if (!span) {
+        // An undersized tile has a span — it is centred with wider joints. Only a tile too
+        // large for its footprint, or under half a cell, lands here.
+        const fit = fitTile(tile, { x: cellX, y: cellY }, joint, rotated);
         return {
           ok: false,
-          error: `${tile.name} is ${tile.length}×${tile.width} m, which is not a whole number of ${cellX}×${cellY} m cells.`,
+          error: `${describeFit(`${tile.name} (${tile.length}×${tile.width} m)`, fit)} Cell ${cellX}×${cellY} m, joint ${joint} m.`,
         };
       }
 

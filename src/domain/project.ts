@@ -6,8 +6,9 @@ import {
   DesignFamilyJsonSchema,
 } from './design-family';
 import { DesignInstanceJsonSchema } from './instance';
+import { defaultJoint, GROUT_MATERIAL_ID, ProjectJointJsonSchema } from './joint';
 import { MaterialDefinitionJsonSchema, createMaterialDefinition } from './material';
-import { defaultMaterials, materialIdForLabel } from './material-presets';
+import { defaultMaterials, groutMaterial, materialIdForLabel } from './material-presets';
 import { translationMat3 } from './mat3';
 import { StockStateJsonSchema } from './stock';
 import {
@@ -34,6 +35,11 @@ export const TilingProjectJsonSchema = z.object({
   boundaries: BoundaryConditionsJsonSchema,
   /** Grid description of the tiling; when present the solver fills from it. */
   tileSchema: TileSchemaJsonSchema.optional(),
+  /**
+   * Grout appearance. A function default, so parsed projects never share one object. The
+   * migration normally supplies it; the default only covers input that skips migration.
+   */
+  joint: ProjectJointJsonSchema.default(() => defaultJoint()),
   instance: DesignInstanceJsonSchema.optional(),
 });
 
@@ -149,6 +155,37 @@ function migrateMaterials(root: Record<string, unknown>): unknown[] {
   });
 }
 
+/**
+ * Give a project a joint, and keep its material reference valid.
+ *
+ * This runs on every parse — including every edit — so it must be idempotent. The grout preset
+ * is appended only when the project has no joint yet: keying it on "no material with that id"
+ * instead would resurrect a grout material the user deleted, on the very next load. A joint
+ * pointing at a missing material is repointed to the first material.
+ */
+function migrateJoint(
+  root: Record<string, unknown>,
+  materials: unknown[],
+): { joint: unknown; materials: unknown[] } {
+  const ids = materials
+    .map((m) => (m && typeof m === 'object' ? (m as { id?: unknown }).id : undefined))
+    .filter((id): id is string => typeof id === 'string');
+
+  const raw = root.joint;
+  if (!raw || typeof raw !== 'object') {
+    return {
+      joint: defaultJoint(),
+      materials: ids.includes(GROUT_MATERIAL_ID) ? materials : [...materials, groutMaterial()],
+    };
+  }
+
+  const joint = { ...(raw as Record<string, unknown>) };
+  if ((typeof joint.materialId !== 'string' || !ids.includes(joint.materialId)) && ids[0]) {
+    joint.materialId = ids[0];
+  }
+  return { joint, materials };
+}
+
 function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data;
   const root = data as Record<string, unknown>;
@@ -157,10 +194,12 @@ function migrateProject(data: unknown): unknown {
   if ((version === 3 || version === 4) && Array.isArray(root.materials)) {
     // v3 and v4 differ only by the optional tileSchema, so one branch normalises
     // both: strip deprecated periodMeters and stamp the current version.
+    const withJoint = migrateJoint(root, migrateMaterials(root));
     return {
       ...root,
       schemaVersion: 4,
-      materials: migrateMaterials(root),
+      materials: withJoint.materials,
+      joint: withJoint.joint,
       tileDefinitions: Array.isArray(root.tileDefinitions)
         ? (root.tileDefinitions as LegacyTile[]).map((t) => ({
             ...t,
@@ -224,11 +263,13 @@ function migrateProject(data: unknown): unknown {
     };
   });
 
+  const withJoint = migrateJoint(root, materials);
   return {
     ...root,
     type: 'TilingProject',
     schemaVersion: 4,
-    materials,
+    materials: withJoint.materials,
+    joint: withJoint.joint,
     tileDefinitions,
   };
 }
@@ -310,6 +351,28 @@ export function createDefaultProject(): TilingProjectJson {
       return family;
     })(),
     boundaries: defaultBoundaries(),
+    joint: defaultJoint(),
+  };
+}
+
+/**
+ * Delete a material, repointing everything that used it — tiles and the joint — to the first
+ * remaining material. A no-op when it is the last material.
+ */
+export function removeMaterial(project: TilingProjectJson, materialId: string): TilingProjectJson {
+  const remaining = project.materials.filter((m) => m.id !== materialId);
+  const fallback = remaining[0]?.id;
+  if (!fallback) return project;
+  return {
+    ...project,
+    materials: remaining,
+    tileDefinitions: project.tileDefinitions.map((t) =>
+      t.materialId === materialId ? { ...t, materialId: fallback } : t,
+    ),
+    joint:
+      project.joint.materialId === materialId
+        ? { ...project.joint, materialId: fallback }
+        : project.joint,
   };
 }
 
@@ -324,6 +387,7 @@ export function projectFromJsonString(text: string): TilingProjectJson {
 export * from './boundaries';
 export * from './design-family';
 export * from './instance';
+export * from './joint';
 export * from './material';
 export * from './material-presets';
 export * from './mat3';

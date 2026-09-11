@@ -54,6 +54,8 @@ export type UiState = {
   selectedSdfPath: string | null;
   /** 3D view: per-tile UV offset and tint for continuous (no-rhythm) tiles. */
   tileVariation: TileVariationSettings;
+  /** Joint to start a new tile schema with, before a tile grid exists to hold it. */
+  newSchemaJoint: number;
 };
 
 const DEFAULT_UI_STATE: UiState = {
@@ -74,6 +76,7 @@ const DEFAULT_UI_STATE: UiState = {
   materialPrompt: 'Worn terracotta with fine grain and subtle speckles, seamlessly tileable.',
   selectedSdfPath: null,
   tileVariation: DEFAULT_TILE_VARIATION,
+  newSchemaJoint: 0,
 };
 
 function loadUiState(): UiState {

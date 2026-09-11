@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
+import { JointPanel } from '../components/joint-panel';
 import {
   addMasterLevelAboveRoot,
   bestSpanForDrag,
@@ -9,7 +10,10 @@ import {
   createTileGrid,
   createTileGridInstance,
   createTileSchema,
+  describeFit,
   extentCells,
+  fitTile,
+  formatMm,
   findMasterGrid,
   findTileGrid,
   identityFrame2Json,
@@ -20,6 +24,7 @@ import {
   removeInstanceAt,
   removeRootMasterLevel,
   setLevelExtent,
+  sanitizeJoint,
   spanFor,
   spanOptions,
   tileDisplayColor,
@@ -234,6 +239,7 @@ function previewBoundary(grid: TileGridJson, u: IntVec2, v: IntVec2): BoundaryCo
 
 export function TileSchemaPage() {
   const { project, setTileSchema, llmSettings } = useProject();
+  const { project: projectForJoint } = useProject();
   const { ui, patchUi } = useUiState();
 
   // Everything the user authors here lives in the persisted UI state, not in
@@ -365,7 +371,11 @@ export function TileSchemaPage() {
       const flat: TileSchemaJson = { ...draft, frame: identityFrame2Json() };
       const boundaries = previewBoundary(tileGrid, resolution.resolved.u, resolution.resolved.v);
       const filled = fillPolygonWithTileSchema({ schema: flat, tiles, boundaries });
-      const instance: DesignInstanceJson = { type: 'DesignInstance', placements: filled.placements };
+      const instance: DesignInstanceJson = {
+        type: 'DesignInstance',
+        placements: filled.placements,
+        grid: filled.grid ?? undefined,
+      };
       return { instance, boundaries, stats: filled.stats };
     } catch {
       return null;
@@ -388,12 +398,19 @@ export function TileSchemaPage() {
     });
   };
 
+  // A cell is unit + joint. New schemas take the joint from the current grid, or from the
+  // "No schema yet" input when there is no grid to hold one yet.
+  const newJoint = sanitizeJoint(tileGrid?.joint ?? ui.newSchemaJoint);
+  // Rounded to the micrometre, so a cell reads 0.15 rather than 0.15000000000000002.
+  const micro = (v: number) => Math.round(v * 1e6) / 1e6;
+
   const createBlank = () => {
     const first = tiles[0];
     if (!first) return;
     const grid = createTileGrid({
       name: 'Repeat',
-      cell: { x: first.width, y: first.width },
+      cell: { x: micro(first.width + newJoint), y: micro(first.width + newJoint) },
+      joint: newJoint,
       extent: { iCount: 4, jCount: 4 },
       instances: [],
       fallbackTileDefinitionId: first.id,
@@ -420,12 +437,12 @@ export function TileSchemaPage() {
       tileDefinitionId: t.id,
       areaShare: shares[t.id] ?? 50,
     }));
-    const module = findRapportModule({ tiles, targets });
+    const module = findRapportModule({ tiles, targets, joint: newJoint });
     if (!module) {
       setMessage('No gapless repeat exists for those formats and shares.');
       return;
     }
-    const next = rapportToTileSchema(module, { name: 'Rapport' });
+    const next = rapportToTileSchema(module, { name: 'Rapport', joint: newJoint });
     setDraft(next);
     setSelectedLevelId(next.tileGrids[0]?.id ?? null);
     setMessage(
@@ -439,18 +456,22 @@ export function TileSchemaPage() {
     [tiles],
   );
   const presetCell = smallestTile
-    ? { x: smallestTile.length, y: smallestTile.width }
+    ? { x: micro(smallestTile.length + newJoint), y: micro(smallestTile.width + newJoint) }
     : { x: 0.15, y: 0.15 };
   const legend = useMemo(() => patternLegend(tiles), [tiles]);
   // Only the library entries this catalogue can actually build: a pattern's
   // drawing encodes footprints, so one needing a 2:1 slab is no use without one.
   const presets = useMemo(
-    () => patternsForLegend(legend, presetCell, 0),
-    [legend, presetCell.x, presetCell.y],
+    () => patternsForLegend(legend, presetCell, newJoint),
+    [legend, presetCell.x, presetCell.y, newJoint],
   );
 
   const applyPreset = (pattern: LibraryPattern) => {
-    const parsed = parsePattern(patternWithCell(pattern, presetCell.x, presetCell.y), legend);
+    const parsed = parsePattern(
+      patternWithCell(pattern, presetCell.x, presetCell.y, newJoint),
+      legend,
+      { joint: newJoint },
+    );
     if (!parsed.ok) {
       setMessage(`${pattern.name}: ${parsed.error}`);
       return;
@@ -462,7 +483,7 @@ export function TileSchemaPage() {
 
   /** Parse whatever is in the notation box and adopt it. */
   const applyNotation = (text: string) => {
-    const parsed = parsePattern(text, legend);
+    const parsed = parsePattern(text, legend, { joint: newJoint });
     if (!parsed.ok) {
       setAssistError(parsed.error);
       return;
@@ -486,6 +507,7 @@ export function TileSchemaPage() {
           // nothing about where a tile goes, and would swamp a small model.
           tileDefinitions: tiles.map((t) => ({ ...t, texture: undefined })),
           current: ui.schemaNotation || undefined,
+          joint: newJoint,
         },
       });
       // Keep the raw reply so a near-miss can be corrected in the box rather
@@ -526,11 +548,12 @@ export function TileSchemaPage() {
     const footprint = resolveFootprint(rect);
     if (!footprint) {
       setMessage(
-        `${paintTile.name} is ${paintTile.length}×${paintTile.width} m, which is not a whole number of ${tileGrid.cell.x}×${tileGrid.cell.y} m cells.`,
+        `${describeFit(paintTile.name, fitTile(paintTile, tileGrid.cell, tileGrid.joint, false))} Change the cell size or the joint.`,
       );
       return;
     }
     const best = bestSpanForDrag(paintTile, tileGrid.cell, tileGrid.joint, rect)!;
+    const bestFit = fitTile(paintTile, tileGrid.cell, tileGrid.joint, best.rotated);
     const instance = createTileGridInstance(
       paintTile.id,
       footprint.i,
@@ -541,7 +564,11 @@ export function TileSchemaPage() {
     );
     const result = putInstance(tileGrid, instance);
     patchGrid({ instances: result.grid.instances });
-    setMessage(result.replaced > 0 ? `Replaced ${result.replaced} occurrence(s).` : null);
+    const notes = [
+      result.replaced > 0 ? `Replaced ${result.replaced} occurrence(s).` : null,
+      bestFit.fit === 'under' ? describeFit(paintTile.name, bestFit) : null,
+    ].filter(Boolean);
+    setMessage(notes.length > 0 ? notes.join(' ') : null);
   };
 
   const clickCell = (cell: IntVec2) => {
@@ -659,6 +686,10 @@ export function TileSchemaPage() {
           )}
           {message && <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>}
         </section>
+        <JointPanel
+          width={ui.newSchemaJoint}
+          onWidthChange={(metres) => patchUi({ newSchemaJoint: metres })}
+        />
       </div>
     );
   }
@@ -753,15 +784,6 @@ export function TileSchemaPage() {
                     }
                   />
                 </div>
-                <div className="field">
-                  <label>Joint (m)</label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    value={tileGrid.joint}
-                    onChange={(e) => patchGrid({ joint: Math.max(0, Number(e.target.value) || 0) })}
-                  />
-                </div>
               </div>
 
               <div className="row">
@@ -799,10 +821,15 @@ export function TileSchemaPage() {
                   >
                     {tiles.map((t) => {
                       const unit = coversOneCell(t);
+                      const fit = fitTile(t, tileGrid.cell, tileGrid.joint, false);
                       return (
                         <option key={t.id} value={t.id} disabled={!unit}>
                           {t.name}
-                          {unit ? '' : ' — larger than one cell'}
+                          {!unit
+                            ? ' — no one-cell fit'
+                            : fit.fit === 'under'
+                              ? ` — ${formatMm(Math.max(fit.slack.x, fit.slack.y))} under`
+                              : ''}
                         </option>
                       );
                     })}
@@ -818,8 +845,17 @@ export function TileSchemaPage() {
                       const options = spanOptions(t, tileGrid.cell, tileGrid.joint);
                       const label =
                         options.length === 0
-                          ? 'no whole-cell fit'
-                          : options.map((o) => `${o.iSpan}×${o.jSpan}`).join(' or ');
+                          ? 'does not fit the grid'
+                          : options
+                              .map(
+                                (o) =>
+                                  `${o.iSpan}×${o.jSpan}${
+                                    o.fit === 'under'
+                                      ? ` (${formatMm(Math.max(o.slack.x, o.slack.y))} under)`
+                                      : ''
+                                  }`,
+                              )
+                              .join(' or ');
                       return (
                         <option key={t.id} value={t.id} disabled={options.length === 0}>
                           {t.name} — {label}
@@ -841,8 +877,16 @@ export function TileSchemaPage() {
               )}
               {paintTile && footprints.length === 0 && (
                 <p className="error" style={{ marginTop: '0.5rem' }}>
-                  {paintTile.name} is {paintTile.length}×{paintTile.width} m, which is not a whole
-                  number of cells. Change the cell size or the joint.
+                  {describeFit(paintTile.name, fitTile(paintTile, tileGrid.cell, tileGrid.joint, false))}{' '}
+                  Change the cell size or the joint.
+                </p>
+              )}
+              {paintTile && footprints.length > 0 && footprints.every((o) => o.fit === 'under') && (
+                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                  {paintTile.name} is{' '}
+                  {formatMm(Math.max(footprints[0]!.slack.x, footprints[0]!.slack.y))} under its{' '}
+                  {footprints[0]!.iSpan}×{footprints[0]!.jSpan} footprint. It is centred, so the
+                  joints around it widen.
                 </p>
               )}
 
@@ -1066,6 +1110,11 @@ export function TileSchemaPage() {
         </section>
       </div>
 
+      <JointPanel
+        width={tileGrid?.joint ?? 0}
+        onWidthChange={tileGrid ? (metres) => patchGrid({ joint: metres }) : undefined}
+      />
+
       <section className="panel">
         <h2>Repeat</h2>
         {missingTileIds.length > 0 && (
@@ -1112,6 +1161,15 @@ export function TileSchemaPage() {
             break a clipped tile down to.
           </p>
         )}
+        {preview && Object.keys(preview.stats.oversized).length > 0 && (
+          <p className="error">
+            Too large for their footprint, so left out and replaced by fallback tiles:{' '}
+            {Object.entries(preview.stats.oversized)
+              .map(([id, count]) => `${tileMap.get(id)?.name ?? id} ×${count}`)
+              .join(', ')}
+            . Check the tile size, the cell and the joint.
+          </p>
+        )}
         {preview && (
           <>
             <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
@@ -1119,6 +1177,7 @@ export function TileSchemaPage() {
                 instance={preview.instance}
                 tiles={tiles}
                 boundaries={preview.boundaries}
+                joint={projectForJoint.joint}
               />
             </div>
             <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>

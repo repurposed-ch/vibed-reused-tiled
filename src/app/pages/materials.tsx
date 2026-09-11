@@ -3,6 +3,7 @@ import {
   DEFAULT_RELIEF,
   DEFAULT_ROUGHNESS,
   MaterialDefinitionJsonSchema,
+  removeMaterial,
   SdfNodeJsonSchema,
   tileDisplayColor,
   type MaterialDefinitionJson,
@@ -551,13 +552,8 @@ export function MaterialsPage() {
               onClick={() => {
                 const fallback = project.materials.find((m) => m.id !== selected.id)?.id;
                 if (!fallback) return;
-                updateProject((p) => ({
-                  ...p,
-                  materials: p.materials.filter((m) => m.id !== selected.id),
-                  tileDefinitions: p.tileDefinitions.map((t) =>
-                    t.materialId === selected.id ? { ...t, materialId: fallback } : t,
-                  ),
-                }));
+                // Repoints tiles and the joint alike, so nothing is left on a missing material.
+                updateProject((p) => removeMaterial(p, selected.id));
                 setSelectedId(fallback);
               }}
             >
