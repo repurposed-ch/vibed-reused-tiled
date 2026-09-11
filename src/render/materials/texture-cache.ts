@@ -6,14 +6,20 @@ import {
 } from '@/domain/tile';
 import {
   CanvasTexture,
+  NoColorSpace,
   RepeatWrapping,
   SRGBColorSpace,
+  type ColorSpace,
   type Texture,
 } from 'three';
 import { bakeMaterialTexture, TEXTURE_SIZE, type BakeTileInput } from './bake';
 
 type CacheEntry = {
   texture: CanvasTexture;
+  /** Tangent-space normal derived from the same field as `texture`. */
+  normalTexture: CanvasTexture;
+  /** Roughness remapped from the same field; three samples the green channel. */
+  roughnessTexture: CanvasTexture;
   dataUrl: string;
   canvas: HTMLCanvasElement;
   edged: boolean;
@@ -21,12 +27,27 @@ type CacheEntry = {
 
 const cache = new Map<string, CacheEntry>();
 
+/**
+ * Everything about a material that changes a baked pixel. A field missing from here is a
+ * stale-cache bug: editing it would return the previous bake.
+ */
 export function materialRecipeHash(material: MaterialDefinitionJson): string {
   return JSON.stringify({
     id: material.id,
     seed: material.seed,
     sdf: material.sdf,
+    relief: material.relief,
+    roughness: material.roughness,
   });
+}
+
+function toTexture(canvas: HTMLCanvasElement, colorSpace: ColorSpace): CanvasTexture {
+  const texture = new CanvasTexture(canvas);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = colorSpace;
+  texture.needsUpdate = true;
+  return texture;
 }
 
 export function textureCacheKey(input: BakeTileInput, size = TEXTURE_SIZE): string {
@@ -45,15 +66,12 @@ export function getBakedTexture(input: BakeTileInput, size = TEXTURE_SIZE): Cach
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const baked = bakeMaterialTexture(input, size);
-  const texture = new CanvasTexture(baked.canvas);
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.colorSpace = SRGBColorSpace;
-  texture.needsUpdate = true;
-
+  const baked = bakeMaterialTexture(input, size, { normal: true, roughness: true });
   const entry: CacheEntry = {
-    texture,
+    texture: toTexture(baked.canvas, SRGBColorSpace),
+    // Normal and roughness are data, not colour: an sRGB decode would bend every normal.
+    normalTexture: toTexture(baked.normal!.canvas, NoColorSpace),
+    roughnessTexture: toTexture(baked.roughness!.canvas, NoColorSpace),
     dataUrl: baked.dataUrl,
     canvas: baked.canvas,
     edged: baked.edged,
@@ -108,6 +126,8 @@ export function setTextureRepeat(
 export function clearTextureCache(): void {
   for (const entry of cache.values()) {
     entry.texture.dispose();
+    entry.normalTexture.dispose();
+    entry.roughnessTexture.dispose();
   }
   cache.clear();
 }

@@ -1,12 +1,22 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import {
+  cyclePick,
   drawWindow,
-  type DrawWindow,
   gridLines,
   isClosable,
   loopsBounds,
   nearestVertex,
+  orientationOf,
+  ORIENTATION_STROKE,
+  pickLoopsAt,
+  signedArea,
   snapToGrid,
+  type DrawWindow,
   type Loop,
   type Point,
 } from './boundary-draw-geometry';
@@ -14,52 +24,64 @@ import {
 /**
  * Direct-manipulation boundary editor on a metric grid.
  *
- * The boundary could previously only be authored as raw JSON or one of three
- * preset rectangles, which made the L-shapes and holes the fill was built for
- * effectively unreachable.
+ * Every loop's orientation is its role: counter-clockwise loops are solid,
+ * clockwise loops are holes. The loops are coloured that way so the direction a
+ * shape was traced — which decides what gets tiled — is visible at a glance.
  *
- * Draws +Y up like the rest of the app, so what you draw here matches the 2D
- * view and the tile-schema canvas. Vertices snap to the chosen resolution; the
- * drawn guides thin out when that resolution would flood the view, while
+ * Two tools. **Draw** places vertices, including inside existing polygons, which
+ * is how a hole is drawn inside an outline. **Select** picks whole polygons: the
+ * smallest one under the click first, and clicking the same spot again steps to
+ * the next one underneath. Vertices can be dragged with either tool.
+ *
+ * Draws +Y up like the rest of the app. Vertices snap to the chosen resolution;
+ * the drawn guides thin out when that resolution would flood the view, while
  * snapping still uses the true value.
  */
 
+export type LoopSelection =
+  | { kind: 'loop'; loop: number }
+  | { kind: 'vertex'; loop: number; index: number };
+
 export type BoundaryDrawCanvasProps = {
-  outers: Loop[];
-  holes: Loop[];
+  loops: Loop[];
   resolution: number;
-  mode: 'outer' | 'hole';
+  tool: 'draw' | 'select';
   /** Which loop new vertices go to; -1 starts a fresh one. */
   activeLoop: number;
-  selected: { loop: number; index: number } | null;
-  onChange: (next: { outers: Loop[]; holes: Loop[] }) => void;
+  selection: LoopSelection | null;
+  onChange: (loops: Loop[]) => void;
   onActiveLoopChange: (index: number) => void;
-  onSelect: (ref: { loop: number; index: number } | null) => void;
+  onSelect: (selection: LoopSelection | null) => void;
+  onReverse: (loop: number) => void;
+  onDeleteLoop: (loop: number) => void;
   heightPx?: number;
 };
 
-const OUTER_FILL = 'rgba(217,119,58,0.15)';
-const OUTER_STROKE = '#d9773a';
-const HOLE_FILL = 'rgba(26,23,20,0.85)';
-const HOLE_STROKE = '#b5a89a';
+const FILL = { ccw: 'rgba(217,119,58,0.14)', cw: 'rgba(91,143,199,0.16)' } as const;
+const FILL_SELECTED = { ccw: 'rgba(217,119,58,0.34)', cw: 'rgba(91,143,199,0.38)' } as const;
+/** A loop still being drawn has no orientation yet, so it gets no role colour. */
+const NEUTRAL = '#b5a89a';
 
 export function BoundaryDrawCanvas({
-  outers,
-  holes,
+  loops,
   resolution,
-  mode,
+  tool,
   activeLoop,
-  selected,
+  selection,
   onChange,
   onActiveLoopChange,
   onSelect,
+  onReverse,
+  onDeleteLoop,
   heightPx = 420,
 }: BoundaryDrawCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState<{ loop: number; index: number } | null>(null);
   const [hover, setHover] = useState<Point | null>(null);
+  /** Where the previous select click landed, so a second click there cycles. */
+  const lastPick = useRef<Point | null>(null);
 
-  const editing = mode === 'outer' ? outers : holes;
+  const selectedLoop = selection != null && selection.loop < loops.length ? selection.loop : null;
 
   /**
    * The view only ever grows, and only when the drawing leaves it.
@@ -69,12 +91,13 @@ export function BoundaryDrawCanvas({
    * next one landed somewhere else. Holding the window steady and widening it
    * only when a point would fall outside keeps the grid still while you work.
    */
-  const wanted = drawWindow(loopsBounds([...outers, ...holes]), resolution);
+  const wanted = drawWindow(loopsBounds(loops), resolution);
   const held = useRef<DrawWindow | null>(null);
   const previous = held.current;
+  const sameStep = previous?.resolution === wanted.resolution;
   const win: DrawWindow =
     previous == null ||
-    previous.resolution !== wanted.resolution ||
+    !sameStep ||
     wanted.minX < previous.minX ||
     wanted.minY < previous.minY ||
     wanted.maxX > previous.maxX ||
@@ -82,10 +105,10 @@ export function BoundaryDrawCanvas({
       ? {
           // Widen to cover both, so an existing view is never cropped.
           ...wanted,
-          minX: Math.min(wanted.minX, previous?.resolution === wanted.resolution ? previous.minX : wanted.minX),
-          minY: Math.min(wanted.minY, previous?.resolution === wanted.resolution ? previous.minY : wanted.minY),
-          maxX: Math.max(wanted.maxX, previous?.resolution === wanted.resolution ? previous.maxX : wanted.maxX),
-          maxY: Math.max(wanted.maxY, previous?.resolution === wanted.resolution ? previous.maxY : wanted.maxY),
+          minX: Math.min(wanted.minX, sameStep ? previous!.minX : wanted.minX),
+          minY: Math.min(wanted.minY, sameStep ? previous!.minY : wanted.minY),
+          maxX: Math.max(wanted.maxX, sameStep ? previous!.maxX : wanted.maxX),
+          maxY: Math.max(wanted.maxY, sameStep ? previous!.maxY : wanted.maxY),
         }
       : previous;
   held.current = win;
@@ -107,38 +130,64 @@ export function BoundaryDrawCanvas({
     return { x: p.x, y: -p.y };
   };
 
-  const commit = (nextEditing: Loop[]) => {
-    onChange(mode === 'outer' ? { outers: nextEditing, holes } : { outers, holes: nextEditing });
-  };
-
   const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
     const world = toWorld(event);
     if (!svg || !world) return;
     svg.setPointerCapture(event.pointerId);
+    // Focus so R and Delete reach this canvas. The key handler is scoped to the
+    // canvas rather than the window: the same page has a JSON textarea, where
+    // Backspace has to keep meaning backspace.
+    svg.focus({ preventScroll: true });
 
-    const hit = nearestVertex(editing, world, grabTolerance);
+    const open = loops[activeLoop];
+    const drawing = tool === 'draw' && activeLoop >= 0 && open != null;
+
+    // While a loop is open only its own vertices are grab targets. Other loops'
+    // vertices are exactly where a new point often has to land — a hole sharing a
+    // corner with the outline — and grabbing them would make that impossible.
+    let hit: { loop: number; index: number } | null;
+    if (drawing) {
+      const own = nearestVertex([open], world, grabTolerance);
+      hit = own ? { loop: activeLoop, index: own.index } : null;
+    } else {
+      hit = nearestVertex(loops, world, grabTolerance);
+    }
+
     if (hit) {
       // Clicking the first vertex of the loop being drawn closes it.
-      if (hit.loop === activeLoop && hit.index === 0 && isClosable(editing[hit.loop] ?? [])) {
+      if (drawing && hit.index === 0 && isClosable(open)) {
         onActiveLoopChange(-1);
-        onSelect(null);
+        onSelect({ kind: 'loop', loop: activeLoop });
         return;
       }
-      onSelect(hit);
+      onSelect({ kind: 'vertex', loop: hit.loop, index: hit.index });
       setDragging(hit);
       return;
     }
 
+    if (tool === 'select') {
+      const candidates = pickLoopsAt(loops, world);
+      const before = lastPick.current;
+      const sameSpot =
+        before != null && Math.hypot(world.x - before.x, world.y - before.y) <= grabTolerance;
+      // A fresh spot takes the smallest polygon under the click; the same spot
+      // again steps to the next one underneath.
+      const next = sameSpot ? cyclePick(candidates, selectedLoop) : (candidates[0] ?? null);
+      lastPick.current = world;
+      onSelect(next == null ? null : { kind: 'loop', loop: next });
+      return;
+    }
+
     const point = snapToGrid(world, resolution);
-    const next = editing.map((loop) => [...loop]);
-    if (activeLoop >= 0 && next[activeLoop]) {
+    const next = loops.map((l) => [...l]);
+    if (drawing) {
       next[activeLoop]!.push(point);
     } else {
       next.push([point]);
       onActiveLoopChange(next.length - 1);
     }
-    commit(next);
+    onChange(next);
     onSelect(null);
   };
 
@@ -148,11 +197,11 @@ export function BoundaryDrawCanvas({
     setHover(snapToGrid(world, resolution));
     if (!dragging) return;
 
-    const next = editing.map((loop) => [...loop]);
-    const loop = next[dragging.loop];
-    if (!loop) return;
-    loop[dragging.index] = snapToGrid(world, resolution);
-    commit(next);
+    const next = loops.map((l) => [...l]);
+    const target = next[dragging.loop];
+    if (!target) return;
+    target[dragging.index] = snapToGrid(world, resolution);
+    onChange(next);
   };
 
   const endDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -161,46 +210,70 @@ export function BoundaryDrawCanvas({
     setDragging(null);
   };
 
-  const renderLoop = (loop: Loop, key: string, isOuter: boolean, loopIndex: number) => {
-    const open = mode === (isOuter ? 'outer' : 'hole') && loopIndex === activeLoop;
-    const points = loop.map((v) => `${v.x},${-v.y}`).join(' ');
+  const onKeyDown = (event: ReactKeyboardEvent<SVGSVGElement>) => {
+    // Leave browser shortcuts alone — Cmd/Ctrl+R must still reload the page.
+    if (selectedLoop == null || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === 'r' || event.key === 'R') {
+      event.preventDefault();
+      onReverse(selectedLoop);
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      onDeleteLoop(selectedLoop);
+    }
+  };
+
+  // Larger polygons first so smaller ones — the ones picked first — sit on top,
+  // and the selection last so its highlight is never hidden.
+  const order = loops
+    .map((_, i) => i)
+    .sort((a, b) => Math.abs(signedArea(loops[b]!)) - Math.abs(signedArea(loops[a]!)));
+  if (selectedLoop != null) {
+    order.splice(order.indexOf(selectedLoop), 1);
+    order.push(selectedLoop);
+  }
+
+  const renderLoop = (i: number) => {
+    const loop = loops[i]!;
     if (loop.length === 0) return null;
+    const open = tool === 'draw' && i === activeLoop;
+    const closed = !open && loop.length >= 3;
+    const orientation = orientationOf(loop);
+    const isSelected = selectedLoop === i;
+    const stroke = closed ? ORIENTATION_STROKE[orientation] : NEUTRAL;
+    const points = loop.map((v) => `${v.x},${-v.y}`).join(' ');
 
     return (
-      <g key={key}>
+      <g key={i}>
         {loop.length >= 2 &&
-          (open ? (
+          (closed ? (
+            <polygon
+              points={points}
+              fill={isSelected ? FILL_SELECTED[orientation] : FILL[orientation]}
+              stroke={stroke}
+              strokeWidth={isSelected ? 3.5 : 2}
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : (
             <polyline
               points={points}
               fill="none"
-              stroke={isOuter ? OUTER_STROKE : HOLE_STROKE}
+              stroke={stroke}
               strokeWidth={2}
               strokeDasharray="6 4"
               vectorEffect="non-scaling-stroke"
             />
-          ) : (
-            <polygon
-              points={points}
-              fill={isOuter ? OUTER_FILL : HOLE_FILL}
-              stroke={isOuter ? OUTER_STROKE : HOLE_STROKE}
-              strokeWidth={2}
-              vectorEffect="non-scaling-stroke"
-            />
           ))}
         {loop.map((v, index) => {
-          const isSelected =
-            selected != null &&
-            selected.loop === loopIndex &&
-            selected.index === index &&
-            mode === (isOuter ? 'outer' : 'hole');
+          const isSelectedVertex =
+            selection?.kind === 'vertex' && selection.loop === i && selection.index === index;
           const isCloseTarget = open && index === 0 && isClosable(loop);
           return (
             <circle
               key={index}
               cx={v.x}
               cy={-v.y}
-              r={(isSelected || isCloseTarget ? 7 : 5) * (spanX / 800)}
-              fill={isCloseTarget ? '#6f8f6a' : isSelected ? '#f3ebe1' : isOuter ? OUTER_STROKE : HOLE_STROKE}
+              r={(isSelectedVertex || isCloseTarget ? 7 : 5) * (spanX / 800)}
+              fill={isCloseTarget ? '#6f8f6a' : isSelectedVertex ? '#f3ebe1' : stroke}
               stroke="#1a1714"
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
@@ -214,6 +287,7 @@ export function BoundaryDrawCanvas({
   return (
     <svg
       ref={svgRef}
+      tabIndex={0}
       viewBox={`${win.minX} ${-win.maxY} ${spanX} ${spanY}`}
       preserveAspectRatio="xMidYMid meet"
       style={{
@@ -221,7 +295,7 @@ export function BoundaryDrawCanvas({
         height: `${heightPx}px`,
         touchAction: 'none',
         userSelect: 'none',
-        cursor: 'crosshair',
+        cursor: tool === 'select' ? 'default' : 'crosshair',
         background: '#1a1714',
       }}
       onPointerDown={onPointerDown}
@@ -230,8 +304,9 @@ export function BoundaryDrawCanvas({
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
       onPointerLeave={() => setHover(null)}
-      role="img"
-      aria-label="Boundary drawing"
+      onKeyDown={onKeyDown}
+      role="application"
+      aria-label="Boundary drawing. With a polygon selected, R reverses it and Delete removes it."
     >
       <g>
         {gridLines(win.minX, win.maxX, win.lineSpacing).map((x) => (
@@ -260,10 +335,9 @@ export function BoundaryDrawCanvas({
         ))}
       </g>
 
-      {outers.map((loop, i) => renderLoop(loop, `o${i}`, true, i))}
-      {holes.map((loop, i) => renderLoop(loop, `h${i}`, false, i))}
+      {order.map(renderLoop)}
 
-      {hover && (
+      {hover && tool === 'draw' && (
         <circle
           cx={hover.x}
           cy={-hover.y}

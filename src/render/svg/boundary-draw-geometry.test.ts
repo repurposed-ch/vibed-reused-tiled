@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   drawWindow,
   gridLines,
+  boundariesFromLoops,
+  cyclePick,
   isClosable,
   loopsBounds,
+  loopsFromBoundaries,
   loopToPolygonJson,
   nearestVertex,
+  orientationOf,
+  orientLoop,
+  pickLoopsAt,
   polygonJsonToLoop,
+  reverseLoop,
   signedArea,
   snapToGrid,
   type Loop,
@@ -173,5 +180,78 @@ describe('polygon json round trip', () => {
     expect(polygonJsonToLoop({ type: 'Circle2', centre: { x: 0, y: 0 }, radius: 1 })).toEqual([]);
     expect(polygonJsonToLoop({ type: 'Polygon2' })).toEqual([]);
     expect(polygonJsonToLoop(null)).toEqual([]);
+  });
+});
+
+describe('orientation', () => {
+  const square: Loop = [
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 2, y: 2 },
+    { x: 0, y: 2 },
+  ];
+
+  it('reverses into the opposite orientation and back', () => {
+    expect(orientationOf(square)).toBe('ccw');
+    expect(orientationOf(reverseLoop(square))).toBe('cw');
+    expect(signedArea(reverseLoop(square))).toBeCloseTo(-signedArea(square), 9);
+    expect(reverseLoop(reverseLoop(square))).toEqual(square);
+  });
+
+  it('orients a loop only when it is not already that way', () => {
+    expect(orientLoop(square, 'ccw')).toBe(square);
+    expect(orientationOf(orientLoop(square, 'cw'))).toBe('cw');
+  });
+});
+
+describe('boundary lists', () => {
+  const base = { type: 'BoundaryConditions', outers: [] as unknown[], holes: [] as unknown[], guides: [] };
+  const solid: Loop = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 3 }, { x: 0, y: 3 }];
+  const hole: Loop = reverseLoop([{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }, { x: 1, y: 2 }]);
+
+  it('files loops by orientation and reads them back in step', () => {
+    const written = boundariesFromLoops([solid, hole], base);
+    expect(written.outers).toHaveLength(1);
+    expect(written.holes).toHaveLength(1);
+
+    const read = loopsFromBoundaries(written);
+    expect(read.map(orientationOf)).toEqual(['ccw', 'cw']);
+    expect(read[0]).toEqual(solid);
+    expect(read[1]).toEqual(hole);
+  });
+
+  it('reads a clockwise loop stored in outers as solid', () => {
+    // Projects saved before orientation became the role: the list wins.
+    const legacy = { ...base, outers: [loopToPolygonJson(reverseLoop(solid))] };
+    expect(loopsFromBoundaries(legacy).map(orientationOf)).toEqual(['ccw']);
+  });
+
+  it('leaves out loops that are not polygons yet', () => {
+    const written = boundariesFromLoops([solid, [{ x: 0, y: 0 }, { x: 1, y: 1 }]], base);
+    expect(written.outers).toHaveLength(1);
+    expect(written.holes).toHaveLength(0);
+  });
+});
+
+describe('picking', () => {
+  const big: Loop = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  const small: Loop = [{ x: 4, y: 4 }, { x: 6, y: 4 }, { x: 6, y: 6 }, { x: 4, y: 6 }];
+
+  it('returns every containing loop, smallest first', () => {
+    expect(pickLoopsAt([big, small], { x: 5, y: 5 })).toEqual([1, 0]);
+    expect(pickLoopsAt([big, small], { x: 1, y: 1 })).toEqual([0]);
+    expect(pickLoopsAt([big, small], { x: 20, y: 20 })).toEqual([]);
+  });
+
+  it('ignores a loop still being drawn', () => {
+    expect(pickLoopsAt([[{ x: 0, y: 0 }, { x: 10, y: 10 }]], { x: 5, y: 5 })).toEqual([]);
+  });
+
+  it('cycles through candidates on repeated clicks', () => {
+    expect(cyclePick([1, 0], null)).toBe(1);
+    expect(cyclePick([1, 0], 1)).toBe(0);
+    expect(cyclePick([1, 0], 0)).toBe(1); // wraps
+    expect(cyclePick([1, 0], 7)).toBe(1); // restarts when current is not a candidate
+    expect(cyclePick([], 1)).toBeNull();
   });
 });

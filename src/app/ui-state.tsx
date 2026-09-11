@@ -1,5 +1,10 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import type { TileSchemaJson } from '@/domain/project';
+import {
+  DEFAULT_TILE_VARIATION,
+  normalizeTileVariation,
+  type TileVariationSettings,
+} from '@/render/r3f/tile-instances';
 
 /**
  * Editor state that lives outside the project document.
@@ -39,13 +44,16 @@ export type UiState = {
   variants: number[];
   boundaryRaw: string | null;
   drawResolution: number;
-  drawMode: 'outer' | 'hole';
+  /** Draw adds vertices; Select picks whole polygons. Direction decides solid or hole. */
+  drawTool: 'draw' | 'select';
   schemaPrompt: string;
   /** Proposed or hand-written pattern notation, editable and re-appliable. */
   schemaNotation: string;
   materialPrompt: string;
   /** Selected SDF node in the material graph editor, as a slot path key ('root', 'b.child'). */
   selectedSdfPath: string | null;
+  /** 3D view: per-tile UV offset and tint for continuous (no-rhythm) tiles. */
+  tileVariation: TileVariationSettings;
 };
 
 const DEFAULT_UI_STATE: UiState = {
@@ -60,11 +68,12 @@ const DEFAULT_UI_STATE: UiState = {
   variants: [],
   boundaryRaw: null,
   drawResolution: 0.25,
-  drawMode: 'outer',
+  drawTool: 'draw',
   schemaPrompt: 'A running bond of the large format with a course of units every fourth row.',
   schemaNotation: '',
   materialPrompt: 'Worn terracotta with fine grain and subtle speckles, seamlessly tileable.',
   selectedSdfPath: null,
+  tileVariation: DEFAULT_TILE_VARIATION,
 };
 
 function loadUiState(): UiState {
@@ -73,7 +82,14 @@ function loadUiState(): UiState {
     if (!raw) return DEFAULT_UI_STATE;
     // Merged over the defaults rather than trusted wholesale: a stored blob from
     // an older build is missing whatever has been added since.
-    return { ...DEFAULT_UI_STATE, ...(JSON.parse(raw) as Partial<UiState>) };
+    const parsed = JSON.parse(raw) as Partial<UiState>;
+    return {
+      ...DEFAULT_UI_STATE,
+      ...parsed,
+      // The spread above is shallow: a nested object stored by an older build would replace
+      // the defaults wholesale, so it is filled in and clamped on its own.
+      tileVariation: normalizeTileVariation(parsed.tileVariation),
+    };
   } catch {
     return DEFAULT_UI_STATE;
   }

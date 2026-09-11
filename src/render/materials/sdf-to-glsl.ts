@@ -216,6 +216,9 @@ uniform float uEdgeMirrorS;
 uniform float uEdgeMirrorN;
 uniform float uEdgeMirrorE;
 uniform float uEdgeMirrorW;
+uniform int uOutput;    // 0 = albedo, 1 = normal, 2 = roughness, 3 = lit preview
+uniform float uRelief;  // meters the 0..1 field spans
+uniform vec2 uRough;    // roughness at field 0, at field 1
 out vec4 fragColor;
 ${SDF_LIB_GLSL}
 float shadeRaw(vec2 p, float seed, vec2 period) {
@@ -254,14 +257,47 @@ float shadeEdged(vec2 uv) {
   float wSum = wS + wN + wW + wE;
   return (sS * wS + sN * wN + sW * wW + sE * wE) / wSum;
 }
+// Every output below derives from this one scalar field — the normal is its gradient, the
+// roughness is a remap of it. Nothing is authored twice.
+float shadeAt(vec2 uv) {
+  return uEdged == 1 ? shadeEdged(uv) : shadeContinuous(uv);
+}
+vec3 albedoFor(float s) {
+  if (uColorMode == 1) {
+    return iqPalette(s, uPalA, uPalB, uPalC, uPalD);
+  }
+  return mix(uColor * 0.55, uColor * 1.18, s);
+}
+// Central differences one texel apart. shadeContinuous wraps its point, and wrapPeriod is
+// defined for negatives, so at uv = 0 the -h tap wraps to the far edge instead of clamping:
+// the normal map inherits the albedo's exact seamlessness for free.
+vec3 surfaceNormal(vec2 uv) {
+  float h = 1.0 / uResolution.x;
+  float sx = shadeAt(uv + vec2(h, 0.0)) - shadeAt(uv - vec2(h, 0.0));
+  float sy = shadeAt(uv + vec2(0.0, h)) - shadeAt(uv - vec2(0.0, h));
+  // Slope in METERS, not uv — otherwise a non-square tile skews the normal.
+  vec2 d = vec2(sx / (2.0 * h * uTileSize.x), sy / (2.0 * h * uTileSize.y)) * uRelief;
+  return normalize(vec3(-d.x, -d.y, 1.0));
+}
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
-  float s = uEdged == 1 ? shadeEdged(uv) : shadeContinuous(uv);
-  vec3 rgb;
-  if (uColorMode == 1) {
-    rgb = iqPalette(s, uPalA, uPalB, uPalC, uPalD);
-  } else {
-    rgb = mix(uColor * 0.55, uColor * 1.18, s);
+  if (uOutput == 1) {
+    fragColor = vec4(surfaceNormal(uv) * 0.5 + 0.5, 1.0);
+    return;
+  }
+  float s = shadeAt(uv);
+  if (uOutput == 2) {
+    float r = clamp(mix(uRough.x, uRough.y, s), 0.0, 1.0);
+    fragColor = vec4(r, r, r, 1.0);
+    return;
+  }
+  vec3 rgb = albedoFor(s);
+  if (uOutput == 3) {
+    // Fixed key light from the upper left, plus a floor so shadowed relief stays readable.
+    vec3 n = surfaceNormal(uv);
+    vec3 l = normalize(vec3(-0.55, 0.6, 0.58));
+    float lambert = max(dot(n, l), 0.0);
+    rgb *= 0.28 + 0.9 * lambert;
   }
   fragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }

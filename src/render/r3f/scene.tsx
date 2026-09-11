@@ -1,20 +1,23 @@
 import type { DesignInstanceJson } from '@/domain/instance';
 import type { MaterialDefinitionJson } from '@/domain/material';
 import type { TileDefinitionJson } from '@/domain/tile';
-import {
-  bakeInputFromTile,
-  getBakedTexture,
-  setTextureRepeatForTile,
-} from '@/render/materials';
+import { bakeInputFromTile, getBakedTexture } from '@/render/materials';
 import { OrbitControls } from '@react-three/drei';
-import { type RefObject, useLayoutEffect, useMemo, useRef } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useMemo } from 'react';
+import { DoubleSide, type Group } from 'three';
 import {
-  DoubleSide,
-  Matrix4,
-  type Group,
-  type Mesh,
-  type Texture,
-} from 'three';
+  buildTileInstances,
+  DEFAULT_TILE_VARIATION,
+  materialAllowsOffset,
+  type TileInstanceData,
+  type TileVariationSettings,
+} from './tile-instances';
+import {
+  createTileInstanceGeometry,
+  createTileInstancedMesh,
+  createTileInstanceMaterial,
+  writeTileInstances,
+} from './tile-instanced-mesh';
 
 export function Scene3d({
   instance,
@@ -22,6 +25,7 @@ export function Scene3d({
   materials,
   rootRef,
   exportRootRef,
+  variation = DEFAULT_TILE_VARIATION,
 }: {
   instance: DesignInstanceJson;
   tiles: TileDefinitionJson[];
@@ -29,11 +33,23 @@ export function Scene3d({
   rootRef: RefObject<Group | null>;
   /** Tile meshes only (no floor/helpers) — used for GLB / USDZ export. */
   exportRootRef?: RefObject<Group | null>;
+  /** Per-tile UV offset and tint for continuous tiles. */
+  variation?: TileVariationSettings;
 }) {
   const tileMap = useMemo(() => new Map(tiles.map((t) => [t.id, t])), [tiles]);
   const materialMap = useMemo(
     () => new Map(materials.map((m) => [m.id, m])),
     [materials],
+  );
+
+  // One InstancedMesh per tile type: every placement of a type shares its dimensions,
+  // material and bake, so N draw calls become one per type and no textures are cloned.
+  const groups = useMemo(
+    () =>
+      buildTileInstances(instance.placements, tileMap, variation, (tile) =>
+        materialAllowsOffset(materialMap.get(tile.materialId), tile),
+      ),
+    [instance.placements, tileMap, materialMap, variation],
   );
 
   return (
@@ -44,16 +60,15 @@ export function Scene3d({
           <meshStandardMaterial color="#2a241e" side={DoubleSide} />
         </mesh>
         <group ref={exportRootRef}>
-          {instance.placements.map((pl) => {
-            const t = tileMap.get(pl.tileDefinitionId);
-            if (!t) return null;
-            const mat = materialMap.get(t.materialId);
+          {[...groups.values()].map((data) => {
+            const tile = tileMap.get(data.tileDefinitionId);
+            if (!tile) return null;
             return (
-              <TileMesh
-                key={pl.id}
-                tile={t}
-                material={mat}
-                elements={pl.mat3.elements}
+              <TileInstances
+                key={data.tileDefinitionId}
+                tile={tile}
+                material={materialMap.get(tile.materialId)}
+                data={data}
               />
             );
           })}
@@ -64,51 +79,71 @@ export function Scene3d({
   );
 }
 
-function TileMesh({
+function TileInstances({
   tile,
   material,
-  elements,
+  data,
 }: {
   tile: TileDefinitionJson;
   material?: MaterialDefinitionJson;
-  elements: readonly [number, number, number, number, number, number, number, number, number];
+  data: TileInstanceData;
 }) {
-  const ref = useRef<Mesh>(null);
-  const { length, width, thickness } = tile;
-
-  const map = useMemo(() => {
-    if (!material) return null;
-    const { texture } = getBakedTexture(bakeInputFromTile(tile, material));
-    const cloned = texture.clone();
-    cloned.needsUpdate = true;
-    setTextureRepeatForTile(cloned, tile);
-    return cloned;
-  }, [material, tile]);
-
-  useLayoutEffect(() => {
-    return () => {
-      map?.dispose();
-    };
-  }, [map]);
-
-  useLayoutEffect(() => {
-    if (!ref.current) return;
-    const [m00, m10, , m01, m11, , m02, m12] = elements;
-    const m = new Matrix4().set(
-      m00, m01, 0, m02,
-      m10, m11, 0, m12,
-      0, 0, 1, 0,
-      0, 0, 0, 1,
-    );
-    const offset = new Matrix4().makeTranslation(length / 2, width / 2, thickness / 2);
-    ref.current.matrixAutoUpdate = false;
-    ref.current.matrix.copy(m).multiply(offset);
-  }, [elements, length, width, thickness]);
-
-  return (
-    <mesh ref={ref} castShadow userData={{ bakedMap: map as Texture | null }}>
-      <boxGeometry args={[length, width, thickness]} />
-      <meshStandardMaterial color="#ffffff" map={map ?? undefined} />
-    </mesh>
+  // Tile objects get new identities on every project write, but the texture cache returns the
+  // same entry for the same content, so everything keyed on `baked` stays put across edits.
+  const baked = useMemo(
+    () => (material ? getBakedTexture(bakeInputFromTile(tile, material)) : null),
+    [tile, material],
   );
+
+  // The cache owns the textures, so only the material is disposed here — never its maps.
+  const threeMaterial = useMemo(
+    () =>
+      createTileInstanceMaterial(
+        baked
+          ? {
+              map: baked.texture,
+              normalMap: baked.normalTexture,
+              roughnessMap: baked.roughnessTexture,
+            }
+          : null,
+      ),
+    [baked],
+  );
+  useEffect(
+    () => () => {
+      threeMaterial.dispose();
+    },
+    [threeMaterial],
+  );
+
+  const { length, width, thickness } = tile;
+  const geometry = useMemo(
+    () => createTileInstanceGeometry(length, width, thickness, data.count),
+    [length, width, thickness, data.count],
+  );
+  useEffect(
+    () => () => {
+      geometry.dispose();
+    },
+    [geometry],
+  );
+
+  // Built here and rendered as a primitive: R3F reconstructs an <instancedMesh args> whenever
+  // any argument's identity changes, which would drop the instance buffers on every edit.
+  const mesh = useMemo(
+    () => createTileInstancedMesh(geometry, threeMaterial, data.count, tile.id),
+    [geometry, threeMaterial, data.count, tile.id],
+  );
+  useEffect(
+    () => () => {
+      mesh.dispose();
+    },
+    [mesh],
+  );
+
+  useLayoutEffect(() => {
+    writeTileInstances(mesh, data);
+  }, [mesh, data]);
+
+  return <primitive object={mesh} />;
 }

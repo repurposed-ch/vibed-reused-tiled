@@ -267,78 +267,117 @@ export function defaultMaterials(): MaterialDefinitionJson[] {
       name: 'terracotta',
       seed: 11,
       sdf: terracottaSdf,
+      // unglazed fired clay: matte, soft low-frequency lumps
+      relief: 0.004,
+      roughness: [0.95, 0.8],
     }),
     createMaterialDefinition({
       id: 'material-stone',
       name: 'stone',
       seed: 42,
       sdf: stoneSdf,
+      // negative: the bright voronoi seams sink into joints
+      relief: -0.002,
+      roughness: [0.9, 0.75],
     }),
     createMaterialDefinition({
       id: 'material-ceramic',
       name: 'ceramic',
       seed: 7,
       sdf: ceramicSdf,
+      // semi-gloss glaze over soft undulation
+      relief: 0.004,
+      roughness: [0.55, 0.4],
     }),
     createMaterialDefinition({
       id: 'material-marble',
       name: 'marble',
       seed: 23,
       sdf: marbleSdf,
+      // polished: nearly flat and glossy, so specular carries it
+      relief: 0.0005,
+      roughness: [0.2, 0.3],
     }),
     createMaterialDefinition({
       id: 'material-terrazzo',
       name: 'terrazzo',
       seed: 5,
       sdf: terrazzoSdf,
+      // ground and polished flat
+      relief: 0.0006,
+      roughness: [0.35, 0.2],
     }),
     createMaterialDefinition({
       id: 'material-craquelure',
       name: 'craquelure',
       seed: 91,
       sdf: craquelureSdf,
+      // glossy glaze; the dark cracks sit low and rough
+      relief: 0.0008,
+      roughness: [0.6, 0.1],
     }),
     createMaterialDefinition({
       id: 'material-wood',
       name: 'wood',
       seed: 3,
       sdf: woodSdf,
+      // open grain
+      relief: 0.003,
+      roughness: [0.8, 0.6],
     }),
     createMaterialDefinition({
       id: 'material-azulejo',
       name: 'azulejo',
       seed: 17,
       sdf: azulejoSdf,
+      // glazed tile with slightly raised line work
+      relief: 0.0008,
+      roughness: [0.35, 0.2],
     }),
     createMaterialDefinition({
       id: 'material-encaustic',
       name: 'encaustic',
       seed: 64,
       sdf: encausticSdf,
+      // cement tile: flat and matte
+      relief: 0.0006,
+      roughness: [0.85, 0.7],
     }),
     createMaterialDefinition({
       id: 'material-concrete',
       name: 'weathered concrete',
       seed: 88,
       sdf: concreteSdf,
+      // pitted and scratched; dark wear sits low
+      relief: 0.003,
+      roughness: [0.95, 0.8],
     }),
     createMaterialDefinition({
       id: 'material-contour',
       name: 'contour',
       seed: 12,
       sdf: contourSdf,
+      // terraced steps
+      relief: 0.004,
+      roughness: [0.8, 0.6],
     }),
     createMaterialDefinition({
       id: 'material-cobblestone',
       name: 'cobblestone',
       seed: 55,
       sdf: cobblestoneSdf,
+      // domed setts, recessed joints
+      relief: 0.005,
+      roughness: [0.95, 0.7],
     }),
     createMaterialDefinition({
       id: 'material-transfer-print',
       name: 'transfer print',
       seed: 39,
       sdf: transferPrintSdf,
+      // a print has no relief; the glaze does the work
+      relief: 0.0003,
+      roughness: [0.3, 0.2],
     }),
   ];
 }

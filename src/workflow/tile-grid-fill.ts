@@ -12,6 +12,7 @@ import { spanFor, toFrame2, type IntVec2, type TileSchemaJson } from '@/domain/t
 import { Epsilon } from '@/math/core/epsilon';
 import { Vec2 } from '@/math/core/vec2';
 import { Polygon2 } from '@/math/geometry/regions/polygon2';
+import { resolveBoundaryRegion } from './boundary-region';
 import { resolveCell, resolveSchema, type Mirror, type ResolvedSchema } from './tile-grid-lattice';
 import type { SampledStock } from './sample-stock';
 
@@ -65,31 +66,6 @@ export type TileGridFillInput = {
   boundaries: BoundaryConditionsJson;
   sampledStock?: SampledStock[];
 };
-
-/** Loosely-typed boundary geometry to vertex loops. Mirrors what solve-layout accepts. */
-function boundaryLoops(boundaries: BoundaryConditionsJson): LocalLoop[] {
-  const loops: LocalLoop[] = [];
-  for (const geometry of [...boundaries.outers, ...boundaries.holes]) {
-    if (geometry.type === 'Polygon2' && Array.isArray(geometry.vertices)) {
-      const vertices = geometry.vertices as Array<{ x: number; y: number }>;
-      if (vertices.length >= 3) loops.push(vertices.map((v) => ({ x: v.x, y: v.y })));
-      continue;
-    }
-    if (geometry.type === 'Aabb2') {
-      const min = geometry.min as { x: number; y: number } | undefined;
-      const max = geometry.max as { x: number; y: number } | undefined;
-      if (min && max) {
-        loops.push([
-          { x: min.x, y: min.y },
-          { x: max.x, y: min.y },
-          { x: max.x, y: max.y },
-          { x: min.x, y: max.y },
-        ]);
-      }
-    }
-  }
-  return loops;
-}
 
 /** Liang–Barsky: does the segment touch the rectangle at all? */
 function segmentIntersectsRect(
@@ -168,8 +144,12 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   const tiles = new Map(input.tiles.map((t) => [t.id, t]));
   const frame = toFrame2(input.schema.frame);
 
-  const worldLoops = boundaryLoops(input.boundaries);
-  if (worldLoops.length === 0) {
+  // The union of the outers less the holes, computed once and shared with the
+  // preview. The previous test was even-odd over every loop together, so two
+  // overlapping outers cancelled in their overlap and a hole drawn outside the
+  // outline became a tiled island.
+  const region = resolveBoundaryRegion(input.boundaries);
+  if (region.empty) {
     return {
       placements: [],
       byTile: {},
@@ -179,9 +159,9 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
 
   // Everything downstream works in grid-local space, where cells are axis-aligned
   // regardless of how the frame rotates or mirrors the setting-out.
-  const localLoops: LocalLoop[] = worldLoops.map((loop) =>
-    loop.map((v) => {
-      const local = frame.toLocal(new Vec2(v.x, v.y));
+  const localLoops: LocalLoop[] = region.polygons.map((polygon) =>
+    polygon.vertices.map((v) => {
+      const local = frame.toLocal(v);
       return { x: local.x, y: local.y };
     }),
   );
@@ -208,14 +188,23 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
   const j0 = Math.floor(minY / cellY);
   const j1 = Math.ceil(maxY / cellY);
 
-  const inside = (x: number, y: number): boolean =>
-    Polygon2.isPointInside(localPolygons, new Vec2(x, y), Epsilon.preferIn);
+  // Non-zero winding over the region's loops: the boolean returns holes as
+  // clockwise loops, so their winding cancels the surrounding outer. A point on
+  // an edge counts as inside, so a cell flush with the boundary is a whole cell.
+  // A mirrored frame flips every loop's orientation together, which negates the
+  // sum but leaves the non-zero test intact.
+  const edgeSlack = Math.abs(Epsilon.preferIn.value);
+  const inside = (x: number, y: number): boolean => {
+    const point = new Vec2(x, y);
+    if (localPolygons.some((p) => p.distanceToPoint(point) <= edgeSlack)) return true;
+    return localPolygons.reduce((sum, p) => sum + p.windingNumber(point), 0) !== 0;
+  };
 
   /**
    * Shrink used to sample a cell's open interior rather than its closed rect.
-   * It has to clear `Epsilon.value`: `Polygon2.isPointInside` reports anything
-   * within that distance of an edge as lying on the boundary, and therefore
-   * inside, so a smaller nudge would not escape the boundary band at all.
+   * It has to clear `Epsilon.value`: `inside` reports anything within that
+   * distance of an edge as lying on the boundary, and therefore inside, so a
+   * smaller nudge would not escape the boundary band at all.
    */
   const nudge = Math.max(Math.min(cellX, cellY) * 1e-3, Epsilon.value * 10);
 

@@ -1,5 +1,7 @@
 import {
   createMaterialDefinition,
+  DEFAULT_RELIEF,
+  DEFAULT_ROUGHNESS,
   MaterialDefinitionJsonSchema,
   SdfNodeJsonSchema,
   tileDisplayColor,
@@ -60,11 +62,14 @@ function MaterialPreview({
   colorHex,
   length,
   width,
+  lit,
 }: {
   material: MaterialDefinitionJson;
   colorHex: string;
   length: number;
   width: number;
+  /** Shade the albedo with the normal derived from the same field, so relief is visible. */
+  lit: boolean;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [seam, setSeam] = useState<number | null>(null);
@@ -79,6 +84,7 @@ function MaterialPreview({
           width,
         },
         160,
+        { primary: lit ? 'lit' : 'albedo' },
       );
       setUrl(baked.dataUrl);
       setSeam(maxSeamDelta(material.sdf, material.seed, [length, width]));
@@ -86,7 +92,7 @@ function MaterialPreview({
       setUrl(null);
       setSeam(null);
     }
-  }, [material, colorHex, length, width]);
+  }, [material, colorHex, length, width, lit]);
 
   const seamColor =
     seam === null
@@ -200,6 +206,7 @@ export function MaterialsPage() {
   const [sdfError, setSdfError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [assistError, setAssistError] = useState<string | null>(null);
+  const [litPreview, setLitPreview] = useState(true);
 
   const prompt = ui.materialPrompt;
   const setPrompt = (next: string) => patchUi({ materialPrompt: next });
@@ -246,6 +253,42 @@ export function MaterialsPage() {
     setSdfText(draft ? JSON.stringify(draft, null, 2) : '');
   }, [draftKey]);
 
+  // Relief and roughness are slider-driven, so they get the same draft-then-commit as the
+  // SDF: binding a slider straight to updateProject would reparse the project per frame.
+  const [surface, setSurface] = useState<{ relief: number; roughness: [number, number] }>(() => ({
+    relief: selected?.relief ?? DEFAULT_RELIEF,
+    roughness: [...(selected?.roughness ?? DEFAULT_ROUGHNESS)] as [number, number],
+  }));
+  useEffect(() => {
+    setSurface({
+      relief: selected?.relief ?? DEFAULT_RELIEF,
+      roughness: [...(selected?.roughness ?? DEFAULT_ROUGHNESS)] as [number, number],
+    });
+  }, [selected?.id]);
+  const surfaceKey = `${surface.relief}|${surface.roughness[0]}|${surface.roughness[1]}`;
+  useEffect(() => {
+    if (!selected) return;
+    if (
+      selected.relief === surface.relief &&
+      selected.roughness[0] === surface.roughness[0] &&
+      selected.roughness[1] === surface.roughness[1]
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      updateProject((p) => ({
+        ...p,
+        materials: p.materials.map((m) =>
+          m.id === selected.id
+            ? { ...m, relief: surface.relief, roughness: surface.roughness }
+            : m,
+        ),
+      }));
+    }, COMMIT_MS);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surfaceKey, selected?.id]);
+
   const provider = getProvider(llmSettings.provider);
   const assistEnabled =
     Boolean(llmSettings.provider) &&
@@ -265,9 +308,17 @@ export function MaterialsPage() {
 
   // Memoised on the serialised draft so the GPU bake does not re-run on every render.
   const previewMaterial = useMemo(
-    () => (selected && draft ? { ...selected, sdf: draft } : selected),
+    () =>
+      selected
+        ? {
+            ...selected,
+            sdf: draft ?? selected.sdf,
+            relief: surface.relief,
+            roughness: surface.roughness,
+          }
+        : selected,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected?.id, selected?.name, selected?.seed, draftKey],
+    [selected?.id, selected?.name, selected?.seed, draftKey, surfaceKey],
   );
 
   const issues = useMemo(
@@ -361,6 +412,7 @@ export function MaterialsPage() {
                 colorHex={previewColor}
                 length={previewLength}
                 width={previewWidth}
+                lit={litPreview}
               />
               <div className="stack" style={{ flex: 1, minWidth: '10rem' }}>
                 <div className="field">
@@ -389,7 +441,100 @@ export function MaterialsPage() {
                 >
                   Reseed
                 </button>
+                <div className="row" style={{ gap: '0.35rem' }}>
+                  <button
+                    type="button"
+                    className={litPreview ? 'btn' : 'btn primary'}
+                    style={{ padding: '0.35rem 0.6rem', minHeight: 0 }}
+                    onClick={() => setLitPreview(false)}
+                  >
+                    Flat
+                  </button>
+                  <button
+                    type="button"
+                    className={litPreview ? 'btn primary' : 'btn'}
+                    style={{ padding: '0.35rem 0.6rem', minHeight: 0 }}
+                    title="Shade the preview with the normal map derived from this field"
+                    onClick={() => setLitPreview(true)}
+                  >
+                    Lit
+                  </button>
+                </div>
               </div>
+            </div>
+
+            <div className="stack" style={{ gap: '0.4rem' }}>
+              <span
+                className="muted"
+                style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}
+              >
+                Surface
+              </span>
+              <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>
+                The normal and roughness maps are derived from this same field — its gradient
+                is the relief, its value picks the roughness. Negative relief engraves: bright
+                areas sink, so a light joint line reads as recessed.
+              </p>
+              {(
+                [
+                  {
+                    label: 'Relief',
+                    value: surface.relief * 1000,
+                    min: -5,
+                    max: 5,
+                    step: 0.05,
+                    unit: 'mm',
+                    set: (v: number) => setSurface((prev) => ({ ...prev, relief: v / 1000 })),
+                  },
+                  {
+                    label: 'Rough @ low',
+                    value: surface.roughness[0],
+                    min: 0,
+                    max: 1,
+                    step: 0.01,
+                    unit: '',
+                    set: (v: number) =>
+                      setSurface((prev) => ({ ...prev, roughness: [v, prev.roughness[1]] })),
+                  },
+                  {
+                    label: 'Rough @ high',
+                    value: surface.roughness[1],
+                    min: 0,
+                    max: 1,
+                    step: 0.01,
+                    unit: '',
+                    set: (v: number) =>
+                      setSurface((prev) => ({ ...prev, roughness: [prev.roughness[0], v] })),
+                  },
+                ] as const
+              ).map((c) => (
+                <div
+                  key={c.label}
+                  className="row"
+                  style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}
+                >
+                  <label
+                    className="mono muted"
+                    style={{ width: '6.5rem', flex: '0 0 6.5rem', fontSize: '0.72rem', margin: 0 }}
+                  >
+                    {c.label}
+                  </label>
+                  {/* Range inputs stay outside .field, whose padding and border wreck the track. */}
+                  <input
+                    type="range"
+                    min={c.min}
+                    max={c.max}
+                    step={c.step}
+                    value={c.value}
+                    style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+                    onChange={(e) => c.set(Number(e.target.value))}
+                  />
+                  <span className="mono muted" style={{ width: '3.5rem', fontSize: '0.72rem' }}>
+                    {c.value.toFixed(2)}
+                    {c.unit}
+                  </span>
+                </div>
+              ))}
             </div>
 
             <div className="field">

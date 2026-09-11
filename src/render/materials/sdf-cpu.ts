@@ -552,6 +552,48 @@ export function evalSdfNode(node: SdfNodeJson, p: Vec2, seed: number, period: Ve
   }
 }
 
+/**
+ * CPU mirror of the bake shader's `shadeAt` for continuous (non-edged) tiles: the uv in
+ * 0..1 is scaled to meters and wrapped exactly as `shadeContinuous` does.
+ */
+export function shadeAtUv(node: SdfNodeJson, uv: Vec2, seed: number, period: Vec2): number {
+  const p = wrapPeriod2([uv[0] * period[0], uv[1] * period[1]], period);
+  return toShade(evalSdfNode(node, p, seed, period));
+}
+
+/**
+ * CPU mirror of the bake shader's `surfaceNormal`: central differences `texel` apart in uv,
+ * converted to a slope in meters and scaled by `relief`. Returns a unit vector.
+ */
+export function surfaceNormalAt(
+  node: SdfNodeJson,
+  uv: Vec2,
+  seed: number,
+  period: Vec2,
+  relief: number,
+  texel: number,
+): [number, number, number] {
+  const h = texel;
+  const sx = shadeAtUv(node, [uv[0] + h, uv[1]], seed, period) - shadeAtUv(node, [uv[0] - h, uv[1]], seed, period);
+  const sy = shadeAtUv(node, [uv[0], uv[1] + h], seed, period) - shadeAtUv(node, [uv[0], uv[1] - h], seed, period);
+  const dx = (sx / (2 * h * period[0])) * relief;
+  const dy = (sy / (2 * h * period[1])) * relief;
+  const len = Math.hypot(dx, dy, 1);
+  return [-dx / len, -dy / len, 1 / len];
+}
+
+/** CPU mirror of the bake shader's roughness output. */
+export function roughnessAt(
+  node: SdfNodeJson,
+  uv: Vec2,
+  seed: number,
+  period: Vec2,
+  roughness: [number, number],
+): number {
+  const s = shadeAtUv(node, uv, seed, period);
+  return clamp(mix(roughness[0], roughness[1], s), 0, 1);
+}
+
 /** Deterministic sampler so failures reproduce. */
 function sampler(seed = 0x2f6e2b1) {
   let state = seed >>> 0;

@@ -13,6 +13,7 @@ import {
 } from '@/domain/tile-grid';
 import { Frame2 } from '@/math/core/frame2';
 import { Vec2 } from '@/math/core/vec2';
+import { resolveBoundaryRegion } from '@/workflow/boundary-region';
 import { fillPolygonWithTileSchema } from '@/workflow/tile-grid-fill';
 
 const CELL = 0.15;
@@ -489,5 +490,140 @@ describe('fillPolygonWithTileSchema', () => {
     const { doubled, cells } = coverage(result);
     expect(doubled).toEqual([]);
     expect(cells.has('3:3')).toBe(false);
+  });
+});
+
+describe('boundary region', () => {
+  function rectLoop(x0: number, y0: number, x1: number, y1: number) {
+    return {
+      type: 'Polygon2',
+      vertices: [
+        { type: 'Vec2', x: x0, y: y0 },
+        { type: 'Vec2', x: x1, y: y0 },
+        { type: 'Vec2', x: x1, y: y1 },
+        { type: 'Vec2', x: x0, y: y1 },
+      ],
+    };
+  }
+
+  function boundaryOf(
+    outers: ReturnType<typeof rectLoop>[],
+    holes: ReturnType<typeof rectLoop>[] = [],
+  ): BoundaryConditionsJson {
+    return { type: 'BoundaryConditions', outers, holes, guides: [] };
+  }
+
+  it('tiles across the overlap of two overlapping outers', () => {
+    // Even-odd counted two crossings in the overlap and left it untiled. Both
+    // squares are 8×8 cells and overlap by 4×4, so the union is 112 cells.
+    const boundaries = boundaryOf([rectLoop(0, 0, 1.2, 1.2), rectLoop(0.6, 0.6, 1.8, 1.8)]);
+    const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
+
+    expect(result.stats.cells).toBe(112);
+    const { cells, doubled } = coverage(result);
+    expect(doubled).toEqual([]);
+    expect(cells.size).toBe(112);
+    // A cell deep inside the overlap is covered.
+    expect(cells.has('6:6')).toBe(true);
+  });
+
+  it('does not tile a hole drawn outside the outline', () => {
+    // Even-odd counted one crossing inside it and laid tiles there.
+    const boundaries = boundaryOf([rectLoop(0, 0, 1.2, 1.2)], [rectLoop(2.4, 0, 3, 0.6)]);
+    const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
+
+    expect(result.stats.cells).toBe(64);
+    const maxX = Math.max(...result.placements.map((p) => transformPointMat3(p.mat3, 0, 0).x));
+    expect(maxX).toBeLessThan(1.2);
+  });
+
+  it('keeps a hole inside a hole as a hole', () => {
+    // Nested holes both subtract. Even-odd flipped the inner one back to material.
+    const boundaries = boundaryOf(
+      [rectLoop(0, 0, 1.8, 1.8)],
+      [rectLoop(0.3, 0.3, 1.5, 1.5), rectLoop(0.6, 0.6, 1.2, 1.2)],
+    );
+    const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
+
+    // 12×12 cells less the 8×8 outer hole.
+    expect(result.stats.cells).toBe(144 - 64);
+    const { cells } = coverage(result);
+    expect(cells.has('6:6')).toBe(false);
+  });
+
+  it('fills an L built from two overlapping rectangles completely', () => {
+    const boundaries = boundaryOf([rectLoop(0, 0, 1.2, 0.6), rectLoop(0, 0, 0.6, 1.2)]);
+    const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
+
+    // 8×4 plus 4×8, less the 4×4 they share.
+    expect(result.stats.cells).toBe(32 + 32 - 16);
+    const { cells, doubled } = coverage(result);
+    expect(doubled).toEqual([]);
+    expect(cells.size).toBe(48);
+  });
+
+  it('never lays a tile wholly inside a hole that falls between cells', () => {
+    // The realistic case: a drawn hole rarely lands on cell lines. Cells that
+    // straddle its edge are part material, so unit tiles there overrun into the
+    // hole as cut tiles, by design. What must never happen is a tile whose whole
+    // footprint sits inside the hole. Checked on footprints, not origins: a cell
+    // straddling the hole's top edge has its origin inside the hole.
+    const hole = [1, 0.2, 2, 1] as const; // no edge on a 0.15 m cell line
+    const boundaries = boundaryOf([rectLoop(0, 0, 3, 1.5)], [rectLoop(...hole)]);
+    const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
+    const map = new Map(tiles.map((t) => [t.id, t]));
+
+    const boxes = result.placements.map((p) => {
+      const t = map.get(p.tileDefinitionId)!;
+      const corners = [
+        transformPointMat3(p.mat3, 0, 0),
+        transformPointMat3(p.mat3, t.length, 0),
+        transformPointMat3(p.mat3, t.length, t.width),
+        transformPointMat3(p.mat3, 0, t.width),
+      ];
+      return {
+        minX: Math.min(...corners.map((c) => c.x)),
+        maxX: Math.max(...corners.map((c) => c.x)),
+        minY: Math.min(...corners.map((c) => c.y)),
+        maxY: Math.max(...corners.map((c) => c.y)),
+      };
+    });
+
+    const [x0, y0, x1, y1] = hole;
+    const eps = 1e-9;
+    const wholly = boxes.filter(
+      (b) => b.minX >= x0 - eps && b.maxX <= x1 + eps && b.minY >= y0 - eps && b.maxY <= y1 + eps,
+    );
+    expect(wholly).toEqual([]);
+
+    // Anything reaching into the hole must also reach out of it — a cut tile
+    // across the edge, never an island inside.
+    const reaching = boxes.filter(
+      (b) => b.minX < x1 - eps && b.maxX > x0 + eps && b.minY < y1 - eps && b.maxY > y0 + eps,
+    );
+    expect(reaching.length).toBeGreaterThan(0);
+    expect(
+      reaching.every((b) => b.minX < x0 - eps || b.maxX > x1 + eps || b.minY < y0 - eps || b.maxY > y1 + eps),
+    ).toBe(true);
+  });
+
+  it('tiles exactly the region the preview draws', () => {
+    // The whole point: one region feeds both the picture and the layout, so a
+    // cell is covered precisely when its centre lies in the computed region.
+    const boundaries = boundaryOf(
+      [rectLoop(0, 0, 1.2, 1.2), rectLoop(0.6, 0.6, 1.8, 1.8)],
+      [rectLoop(0.15, 0.15, 0.45, 0.45)],
+    );
+    const region = resolveBoundaryRegion(boundaries);
+    const { cells } = coverage(fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries }));
+
+    const disagreements: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      for (let j = 0; j < 12; j += 1) {
+        const centre = new Vec2((i + 0.5) * CELL, (j + 0.5) * CELL);
+        if (region.contains(centre) !== cells.has(`${i}:${j}`)) disagreements.push(`${i}:${j}`);
+      }
+    }
+    expect(disagreements).toEqual([]);
   });
 });

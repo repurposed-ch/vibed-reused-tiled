@@ -1,31 +1,26 @@
 import { useState } from 'react';
 import { BoundaryConditionsJsonSchema, type BoundaryConditionsJson } from '@/domain/project';
 import { BoundarySvg } from '@/render/svg/boundary-svg';
-import { BoundaryDrawCanvas } from '@/render/svg/boundary-draw-canvas';
+import { BoundaryDrawCanvas, type LoopSelection } from '@/render/svg/boundary-draw-canvas';
 import {
-  loopToPolygonJson,
+  boundariesFromLoops,
+  loopsFromBoundaries,
+  orientationOf,
+  ORIENTATION_STROKE,
   polygonJsonToLoop,
+  reverseLoop,
   signedArea,
   type Loop,
 } from '@/render/svg/boundary-draw-geometry';
+import { resolveBoundaryRegion } from '@/workflow/boundary-region';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 
 const RESOLUTIONS = [0.05, 0.1, 0.25, 0.5, 1];
 
-/** Loops for the two geometry shapes the app can draw, plus what it had to skip. */
-function readLoops(geometries: BoundaryConditionsJson['outers']): {
-  loops: Loop[];
-  skipped: number;
-} {
-  const loops: Loop[] = [];
-  let skipped = 0;
-  for (const geometry of geometries) {
-    const loop = polygonJsonToLoop(geometry);
-    if (loop.length > 0) loops.push(loop);
-    else skipped += 1;
-  }
-  return { loops, skipped };
+/** Stored shapes the editor cannot use: unreadable, or fewer than three vertices. */
+function unusableCount(geometries: readonly unknown[]): number {
+  return geometries.filter((g) => polygonJsonToLoop(g).length < 3).length;
 }
 
 export function BoundariesPage() {
@@ -33,34 +28,62 @@ export function BoundariesPage() {
   const { ui, patchUi } = useUiState();
   const [error, setError] = useState<string | null>(null);
   const [activeLoop, setActiveLoop] = useState(-1);
-  const [selected, setSelected] = useState<{ loop: number; index: number } | null>(null);
+  const [selection, setSelection] = useState<LoopSelection | null>(null);
+
+  // One ordered list of loops, orientation being each loop's role. It becomes page
+  // state after an edit for two reasons: a loop still being drawn has too few
+  // vertices to be stored at all, and reversing a loop moves it between the stored
+  // `outers` and `holes` lists — keeping this order is what keeps a selection
+  // index pointing at the same polygon.
+  const [draft, setDraft] = useState<Loop[] | null>(null);
+  const loops = draft ?? loopsFromBoundaries(project.boundaries);
 
   const raw = ui.boundaryRaw ?? JSON.stringify(project.boundaries, null, 2);
   const setRaw = (next: string | null) => patchUi({ boundaryRaw: next });
 
-  const outerRead = readLoops(project.boundaries.outers);
-  const holeRead = readLoops(project.boundaries.holes);
-  const undrawable = outerRead.skipped + holeRead.skipped;
+  const region = resolveBoundaryRegion(project.boundaries);
+  const undrawable =
+    unusableCount(project.boundaries.outers) + unusableCount(project.boundaries.holes);
 
-  const writeLoops = (next: { outers: Loop[]; holes: Loop[] }) => {
-    // A loop under three vertices is not a polygon, so it is kept on the canvas
-    // to carry on drawing but never written as geometry the fill would ignore.
-    const outers = next.outers.map(loopToPolygonJson).filter((g) => g != null);
-    const holes = next.holes.map(loopToPolygonJson).filter((g) => g != null);
-    const boundaries: BoundaryConditionsJson = {
-      ...project.boundaries,
-      outers: outers as BoundaryConditionsJson['outers'],
-      holes: holes as BoundaryConditionsJson['holes'],
-    };
+  const writeLoops = (next: Loop[]) => {
+    // Filed by orientation — counter-clockwise under `outers`, clockwise under
+    // `holes` — so the stored lists always agree with the winding.
+    const boundaries = boundariesFromLoops(next, project.boundaries);
     updateProject((p) => ({ ...p, boundaries }));
     setRaw(null);
     setError(null);
     setDraft(next);
   };
 
-  // Loops mid-draw live here, because a one- or two-vertex loop cannot be stored.
-  const [draft, setDraft] = useState<{ outers: Loop[]; holes: Loop[] } | null>(null);
-  const loops = draft ?? { outers: outerRead.loops, holes: holeRead.loops };
+  const selectedLoop =
+    selection != null && selection.loop < loops.length ? selection.loop : null;
+  const drawing = ui.drawTool === 'draw' && activeLoop >= 0;
+  const closedLoops = loops.filter((l, i) => l.length >= 3 && !(drawing && i === activeLoop));
+  const solids = closedLoops.filter((l) => orientationOf(l) === 'ccw').length;
+  const holes = closedLoops.length - solids;
+
+  const reverseAt = (index: number) => {
+    writeLoops(loops.map((l, k) => (k === index ? reverseLoop(l) : l)));
+    setSelection({ kind: 'loop', loop: index });
+  };
+
+  const deleteLoopAt = (index: number) => {
+    writeLoops(loops.filter((_, k) => k !== index));
+    setSelection(null);
+    setActiveLoop((current) => (current === index ? -1 : current > index ? current - 1 : current));
+  };
+
+  const deleteVertex = () => {
+    if (selection?.kind !== 'vertex') return;
+    const next = loops.map((l) => [...l]);
+    next[selection.loop]?.splice(selection.index, 1);
+    if ((next[selection.loop]?.length ?? 0) === 0) {
+      deleteLoopAt(selection.loop);
+      return;
+    }
+    writeLoops(next);
+    setSelection({ kind: 'loop', loop: selection.loop });
+  };
 
   const applyJson = () => {
     try {
@@ -68,16 +91,22 @@ export function BoundariesPage() {
       // The schema is a passthrough over `{ type: string }`, so it accepts
       // geometry no renderer can draw and no solver can use. Catch that here
       // rather than leaving an empty preview and a success message.
-      const bad =
-        readLoops(parsed.outers).skipped + readLoops(parsed.holes).skipped;
+      const bad = unusableCount(parsed.outers) + unusableCount(parsed.holes);
       if (bad > 0) {
         setError(
-          `${bad} outer/hole entr${bad === 1 ? 'y has' : 'ies have'} no usable vertices. Only Polygon2 and Aabb2 can be drawn or filled.`,
+          `${bad} outer/hole entr${bad === 1 ? 'y has' : 'ies have'} fewer than three usable vertices. Only Polygon2 and Aabb2 can be drawn or filled.`,
         );
         return;
       }
-      updateProject((p) => ({ ...p, boundaries: parsed }));
+      // The list decides the role on read, then loops are re-filed by
+      // orientation — so a clockwise loop typed under `outers` is stored as a
+      // counter-clockwise solid, as the list said it should be.
+      const normalised = boundariesFromLoops(loopsFromBoundaries(parsed), parsed);
+      updateProject((p) => ({ ...p, boundaries: normalised }));
       setDraft(null);
+      setSelection(null);
+      setActiveLoop(-1);
+      setRaw(null);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON');
@@ -115,32 +144,24 @@ export function BoundariesPage() {
     setDraft(null);
     setRaw(null);
     setActiveLoop(-1);
+    setSelection(null);
     setError(null);
   };
 
-  const editing = ui.drawMode === 'outer' ? loops.outers : loops.holes;
-  const openLoop = activeLoop >= 0 ? editing[activeLoop] : undefined;
+  const openLoop = drawing ? loops[activeLoop] : undefined;
+  const selected = selectedLoop != null ? loops[selectedLoop] : undefined;
 
-  const deleteSelected = () => {
-    if (!selected) return;
-    const next = {
-      outers: loops.outers.map((l) => [...l]),
-      holes: loops.holes.map((l) => [...l]),
-    };
-    const list = ui.drawMode === 'outer' ? next.outers : next.holes;
-    list[selected.loop]?.splice(selected.index, 1);
-    if ((list[selected.loop]?.length ?? 0) === 0) list.splice(selected.loop, 1);
-    setSelected(null);
+  const setTool = (tool: 'draw' | 'select') => {
+    patchUi({ drawTool: tool });
     setActiveLoop(-1);
-    writeLoops(next);
   };
 
   return (
     <div className="page">
       <h1>Boundaries</h1>
       <p className="lede">
-        Draw the outline on a grid, or edit the JSON directly. Outer contours and holes are
-        Container2 JSON; named guides are Geometry2 JSON.
+        Draw the outline on a grid, or edit the JSON directly. The direction a polygon is traced
+        decides its role: counter-clockwise is solid, clockwise is a hole.
       </p>
 
       <section className="panel no-print">
@@ -161,19 +182,24 @@ export function BoundariesPage() {
       <section className="panel no-print">
         <h2>Draw</h2>
         <div className="row">
-          <div className="field">
-            <label>Drawing</label>
-            <select
-              value={ui.drawMode}
-              onChange={(e) => {
-                patchUi({ drawMode: e.target.value as 'outer' | 'hole' });
-                setActiveLoop(-1);
-                setSelected(null);
-              }}
-            >
-              <option value="outer">Outer contour</option>
-              <option value="hole">Hole</option>
-            </select>
+          <div className="field" style={{ minWidth: 'auto' }}>
+            <label>Tool</label>
+            <div className="row" style={{ gap: '0.25rem' }}>
+              <button
+                type="button"
+                className={ui.drawTool === 'draw' ? 'btn primary' : 'btn'}
+                onClick={() => setTool('draw')}
+              >
+                Draw
+              </button>
+              <button
+                type="button"
+                className={ui.drawTool === 'select' ? 'btn primary' : 'btn'}
+                onClick={() => setTool('select')}
+              >
+                Select
+              </button>
+            </div>
           </div>
           <div className="field">
             <label>Grid resolution (m)</label>
@@ -200,75 +226,86 @@ export function BoundariesPage() {
               }
             />
           </div>
-          <div className="field" style={{ minWidth: 'auto' }}>
-            <label>&nbsp;</label>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setActiveLoop(-1);
-                setSelected(null);
-              }}
-              disabled={activeLoop < 0}
-            >
-              Finish loop
-            </button>
-          </div>
-          <div className="field" style={{ minWidth: 'auto' }}>
-            <label>&nbsp;</label>
-            <button
-              type="button"
-              className="btn danger"
-              onClick={deleteSelected}
-              disabled={!selected}
-            >
-              Delete vertex
-            </button>
-          </div>
-          <div className="field" style={{ minWidth: 'auto' }}>
-            <label>&nbsp;</label>
-            <button
-              type="button"
-              className="btn danger"
-              onClick={() => {
-                setActiveLoop(-1);
-                setSelected(null);
-                // Only the layer being drawn, so clearing holes does not throw
-                // away an outline that took a while to trace.
-                writeLoops(
-                  ui.drawMode === 'outer'
-                    ? { outers: [], holes: loops.holes }
-                    : { outers: loops.outers, holes: [] },
-                );
-              }}
-              disabled={editing.length === 0}
-            >
-              Clear {ui.drawMode === 'outer' ? 'outers' : 'holes'}
-            </button>
-          </div>
+        </div>
+
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setActiveLoop(-1)}
+            disabled={!drawing}
+          >
+            Finish loop
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => selectedLoop != null && reverseAt(selectedLoop)}
+            disabled={selectedLoop == null}
+          >
+            Reverse orientation
+          </button>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => selectedLoop != null && deleteLoopAt(selectedLoop)}
+            disabled={selectedLoop == null}
+          >
+            Delete polygon
+          </button>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={deleteVertex}
+            disabled={selection?.kind !== 'vertex'}
+          >
+            Delete vertex
+          </button>
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => {
+              writeLoops([]);
+              setActiveLoop(-1);
+              setSelection(null);
+            }}
+            disabled={loops.length === 0}
+          >
+            Clear all
+          </button>
         </div>
 
         <div className="canvas-frame" style={{ marginTop: '1rem', padding: 0 }}>
           <BoundaryDrawCanvas
-            outers={loops.outers}
-            holes={loops.holes}
+            loops={loops}
             resolution={ui.drawResolution}
-            mode={ui.drawMode}
+            tool={ui.drawTool}
             activeLoop={activeLoop}
-            selected={selected}
+            selection={selection}
             onChange={writeLoops}
             onActiveLoopChange={setActiveLoop}
-            onSelect={setSelected}
+            onSelect={setSelection}
+            onReverse={reverseAt}
+            onDeleteLoop={deleteLoopAt}
           />
         </div>
 
         <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-          Click the grid to add a vertex, drag one to move it, click the green first vertex to close
-          the loop. +Y is up, matching the 2D view.
+          <span style={{ color: ORIENTATION_STROKE.ccw }}>■</span> counter-clockwise is solid ·{' '}
+          <span style={{ color: ORIENTATION_STROKE.cw }}>■</span> clockwise is a hole.{' '}
+          {ui.drawTool === 'draw'
+            ? 'Click the grid to add a vertex and the green first vertex to close — the direction you trace decides the role. Drag a vertex to move it.'
+            : 'Click a polygon to select it; clicking the same spot again steps to the next polygon underneath. With one selected, R reverses it and Delete removes it.'}
           {openLoop && openLoop.length < 3
             ? ` This loop has ${openLoop.length} of the 3 vertices a polygon needs, so it is not stored yet.`
             : ''}
         </p>
+        {selected && selected.length >= 3 && (
+          <p className="mono muted" style={{ marginTop: '0.25rem' }}>
+            Selected: {orientationOf(selected) === 'ccw' ? 'solid (counter-clockwise)' : 'hole (clockwise)'}{' '}
+            · {Math.abs(signedArea(selected)).toFixed(2)} m² · {selected.length} vertices
+          </p>
+        )}
         {undrawable > 0 && (
           <p className="error" style={{ marginTop: '0.5rem' }}>
             {undrawable} stored outer/hole shape cannot be drawn or filled — only Polygon2 and Aabb2
@@ -305,10 +342,19 @@ export function BoundariesPage() {
             <BoundarySvg boundaries={project.boundaries} />
           </div>
           <p className="muted" style={{ marginTop: '0.75rem' }}>
-            Outers: {project.boundaries.outers.length} · Holes: {project.boundaries.holes.length} ·
-            Guides: {project.boundaries.guides.length}
-            {loops.outers[0] ? ` · outer winding ${signedArea(loops.outers[0]) >= 0 ? 'CCW' : 'CW'}` : ''}
+            Solids: {solids} · Holes: {holes} · Guides: {project.boundaries.guides.length}
           </p>
+          {/* The shape that actually gets tiled, as a number as well as a picture. */}
+          <p className="mono muted" style={{ marginTop: '0.25rem' }}>
+            {region.empty
+              ? 'Tiled region: empty — nothing will be laid.'
+              : `Tiled region: ${region.area.toFixed(2)} m² across ${region.polygons.length} loop${region.polygons.length === 1 ? '' : 's'}`}
+          </p>
+          {region.problem && (
+            <p className="error" style={{ marginTop: '0.5rem' }}>
+              {region.problem}
+            </p>
+          )}
           <ul className="muted">
             {project.boundaries.guides.map((g) => (
               <li key={g.id}>

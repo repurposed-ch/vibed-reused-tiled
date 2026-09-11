@@ -1,4 +1,6 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
+import { resolveBoundaryRegion } from '@/workflow/boundary-region';
+import { ORIENTATION_STROKE } from './boundary-draw-geometry';
 
 type Vec = { x: number; y: number };
 
@@ -21,6 +23,10 @@ function asVerts(geom: Record<string, unknown>): Vec[] {
   return [];
 }
 
+function pathOf(verts: readonly Vec[]): string {
+  return verts.map((v, idx) => `${idx === 0 ? 'M' : 'L'} ${v.x} ${v.y}`).join(' ') + ' Z';
+}
+
 /**
  * Boundary geometry in world coordinates.
  *
@@ -29,28 +35,57 @@ function asVerts(geom: Record<string, unknown>): Vec[] {
  * glyphs in here has to counter-flip itself or it renders mirrored.
  */
 export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJson }) {
+  // The shape that actually gets tiled, computed by the same boolean the fill
+  // uses — so the preview can no longer disagree with the layout. Holes used to
+  // be faked by painting them in the background colour, which double-darkened
+  // overlapping outers and drew a dark blob for a hole outside every outer.
+  const region = resolveBoundaryRegion(boundaries);
+  // Even-odd across the result's loops: they never overlap, so this agrees with
+  // the winding the boolean encodes and does not depend on loop orientation.
+  const regionPath = region.polygons.map((p) => pathOf(p.vertices)).join(' ');
+
   return (
     <g>
+      {regionPath && (
+        <path
+          d={regionPath}
+          fill="rgba(217,119,58,0.28)"
+          fillRule="evenodd"
+          stroke={ORIENTATION_STROKE.ccw}
+          strokeWidth={0.03}
+        />
+      )}
+
+      {/* What was drawn, thin and dashed on top, so input and result can be
+          compared and it is visible which shape caused what. Coloured by
+          orientation — which is each loop's role — in the same colours as the
+          draw canvas. Lists match orientation, so outers are the solid colour. */}
       {boundaries.outers.map((g, i) => {
         const verts = asVerts(g as Record<string, unknown>);
         if (!verts.length) return null;
-        const d = verts.map((v, idx) => `${idx === 0 ? 'M' : 'L'} ${v.x} ${v.y}`).join(' ') + ' Z';
         return (
           <path
             key={`o-${i}`}
-            d={d}
-            fill="rgba(217,119,58,0.15)"
-            stroke="#d9773a"
-            strokeWidth={0.03}
+            d={pathOf(verts)}
+            fill="none"
+            stroke={ORIENTATION_STROKE.ccw}
+            strokeWidth={0.012}
+            strokeDasharray="0.06 0.04"
           />
         );
       })}
       {boundaries.holes.map((g, i) => {
         const verts = asVerts(g as Record<string, unknown>);
         if (!verts.length) return null;
-        const d = verts.map((v, idx) => `${idx === 0 ? 'M' : 'L'} ${v.x} ${v.y}`).join(' ') + ' Z';
         return (
-          <path key={`h-${i}`} d={d} fill="#1a1714" stroke="#b5a89a" strokeWidth={0.02} />
+          <path
+            key={`h-${i}`}
+            d={pathOf(verts)}
+            fill="none"
+            stroke={ORIENTATION_STROKE.cw}
+            strokeWidth={0.012}
+            strokeDasharray="0.06 0.04"
+          />
         );
       })}
       {boundaries.guides.map((guide) => {

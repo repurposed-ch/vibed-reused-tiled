@@ -17,12 +17,31 @@ export type BakeTileInput = {
   rhythm?: TileDefinitionJson['rhythm'];
 };
 
+export type BakeMap = {
+  canvas: HTMLCanvasElement;
+  imageData: ImageData;
+};
+
 export type BakeResult = {
+  /** The primary output — albedo, or the lit preview when `primary: 'lit'`. */
   canvas: HTMLCanvasElement;
   dataUrl: string;
   imageData: ImageData;
   edged: boolean;
+  /** Tangent-space normal, RGB-encoded. Only present when requested. */
+  normal?: BakeMap;
+  /** Roughness in every channel (three reads .g). Only present when requested. */
+  roughness?: BakeMap;
 };
+
+export type BakeOptions = {
+  primary?: 'albedo' | 'lit';
+  normal?: boolean;
+  roughness?: boolean;
+};
+
+/** Matches `uOutput` in buildBakeFragmentShader. */
+const OUTPUT = { albedo: 0, normal: 1, roughness: 2, lit: 3 } as const;
 
 type BakeGl = {
   canvas: OffscreenCanvas | HTMLCanvasElement;
@@ -172,10 +191,38 @@ function edgeUniforms(side: RhythmSideJson | undefined): { seed: number; mirror:
   };
 }
 
+/** Read the current framebuffer into a top-down canvas (readPixels is bottom-up). */
+function readOutput(gl: WebGL2RenderingContext, size: number): BakeMap {
+  const pixels = new Uint8Array(size * size * 4);
+  gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+  const imageData = new ImageData(size, size);
+  for (let y = 0; y < size; y += 1) {
+    const srcRow = (size - 1 - y) * size * 4;
+    const dstRow = y * size * 4;
+    imageData.data.set(pixels.subarray(srcRow, srcRow + size * 4), dstRow);
+  }
+
+  const canvas = createOutputCanvas(size);
+  const ctx2d = canvas.getContext('2d');
+  if (!ctx2d) throw new Error('2D context unavailable for bake output');
+  ctx2d.putImageData(imageData, 0, 0);
+  return { canvas, imageData };
+}
+
 /**
- * Bake a tile albedo via GLSL on a WebGL2 OffscreenCanvas (or hidden canvas fallback).
+ * Bake a tile via GLSL on a WebGL2 OffscreenCanvas (or hidden canvas fallback).
+ *
+ * Every output comes from the same program — the normal is the gradient of the albedo's
+ * scalar field and roughness is a remap of it — so extra outputs are one more draw and
+ * readback each, not another shader. Only requested outputs are baked: the 2D previews ask
+ * for albedo alone and pay nothing extra.
  */
-export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): BakeResult {
+export function bakeMaterialTexture(
+  input: BakeTileInput,
+  size = TEXTURE_SIZE,
+  options: BakeOptions = {},
+): BakeResult {
   const { material, color, length, width, rhythm } = input;
   const edged = hasCompleteRhythm(rhythm);
   const ctx = getBakeGl(size);
@@ -207,6 +254,9 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
   gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorN'), n.mirror);
   gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorE'), e.mirror);
   gl.uniform1f(gl.getUniformLocation(program, 'uEdgeMirrorW'), w.mirror);
+  gl.uniform1f(gl.getUniformLocation(program, 'uRelief'), material.relief ?? 0);
+  const [roughLow, roughHigh] = material.roughness ?? [1, 1];
+  gl.uniform2f(gl.getUniformLocation(program, 'uRough'), roughLow, roughHigh);
 
   if (color.mode === 'palette') {
     const [a, b, d] = color.colors;
@@ -230,29 +280,25 @@ export function bakeMaterialTexture(input: BakeTileInput, size = TEXTURE_SIZE): 
     gl.uniform3f(gl.getUniformLocation(program, 'uPalD'), 0, 0, 0);
   }
 
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const outputLoc = gl.getUniformLocation(program, 'uOutput');
+  const draw = (code: number): BakeMap => {
+    gl.uniform1i(outputLoc, code);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    return readOutput(gl, size);
+  };
 
-  const pixels = new Uint8Array(size * size * 4);
-  gl.readPixels(0, 0, size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-
-  const imageData = new ImageData(size, size);
-  for (let y = 0; y < size; y += 1) {
-    const srcRow = (size - 1 - y) * size * 4;
-    const dstRow = y * size * 4;
-    imageData.data.set(pixels.subarray(srcRow, srcRow + size * 4), dstRow);
-  }
-
-  const canvas = createOutputCanvas(size);
-  const ctx2d = canvas.getContext('2d');
-  if (!ctx2d) throw new Error('2D context unavailable for bake output');
-  ctx2d.putImageData(imageData, 0, 0);
-
-  return {
-    canvas,
-    dataUrl: canvas.toDataURL('image/png'),
-    imageData,
+  const primary = draw(OUTPUT[options.primary ?? 'albedo']);
+  const result: BakeResult = {
+    canvas: primary.canvas,
+    // Only the primary gets a data URL — toDataURL is the expensive part of a bake, and
+    // nothing consumes a data URL for the normal or roughness maps.
+    dataUrl: primary.canvas.toDataURL('image/png'),
+    imageData: primary.imageData,
     edged,
   };
+  if (options.normal) result.normal = draw(OUTPUT.normal);
+  if (options.roughness) result.roughness = draw(OUTPUT.roughness);
+  return result;
 }
 
 /** Release the shared WebGL bake context (tests / hot reload). */

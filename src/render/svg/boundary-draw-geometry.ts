@@ -192,3 +192,111 @@ export function polygonJsonToLoop(geometry: unknown): Loop {
   }
   return [];
 }
+
+/**
+ * Orientation is a loop's role: counter-clockwise loops are solid, clockwise
+ * loops are holes. A degenerate loop with no area reads as solid.
+ */
+export type Orientation = 'ccw' | 'cw';
+
+/**
+ * Stroke colours per orientation, shared by the draw canvas and the preview so
+ * the two agree on what a direction looks like. Orange against blue is the
+ * standard colour-blind-safe pair, which is why no arrowheads are needed.
+ */
+export const ORIENTATION_STROKE: Record<Orientation, string> = {
+  ccw: '#d9773a',
+  cw: '#5b8fc7',
+};
+
+export function orientationOf(loop: Loop): Orientation {
+  return signedArea(loop) < 0 ? 'cw' : 'ccw';
+}
+
+export function reverseLoop(loop: Loop): Loop {
+  return [...loop].reverse();
+}
+
+export function orientLoop(loop: Loop, orientation: Orientation): Loop {
+  return orientationOf(loop) === orientation ? loop : reverseLoop(loop);
+}
+
+type BoundaryLists = { outers: readonly unknown[]; holes: readonly unknown[] };
+
+/**
+ * Every stored loop as one list, oriented by the list it came from: outers made
+ * counter-clockwise, holes clockwise.
+ *
+ * The list is authoritative on read, not the stored winding. That is what keeps
+ * projects saved before orientation became the role intact — an outline traced
+ * clockwise was filed under `outers`, so it is read as solid rather than flipping
+ * into a hole. Writes keep the two in step, so for anything authored in the
+ * editor they never disagree.
+ */
+export function loopsFromBoundaries(boundaries: BoundaryLists): Loop[] {
+  const out: Loop[] = [];
+  for (const geometry of boundaries.outers) {
+    const l = polygonJsonToLoop(geometry);
+    if (l.length > 0) out.push(orientLoop(l, 'ccw'));
+  }
+  for (const geometry of boundaries.holes) {
+    const l = polygonJsonToLoop(geometry);
+    if (l.length > 0) out.push(orientLoop(l, 'cw'));
+  }
+  return out;
+}
+
+/**
+ * The inverse: file each loop by its orientation, counter-clockwise under
+ * `outers` and clockwise under `holes`, so list membership always matches
+ * direction. Loops still being drawn — under three vertices — are left out,
+ * since they are not polygons yet.
+ */
+export function boundariesFromLoops<T extends BoundaryLists>(loops: readonly Loop[], base: T): T {
+  const outers: unknown[] = [];
+  const holes: unknown[] = [];
+  for (const l of loops) {
+    const json = loopToPolygonJson(l);
+    if (!json) continue;
+    (orientationOf(l) === 'ccw' ? outers : holes).push(json);
+  }
+  return { ...base, outers, holes } as T;
+}
+
+/** Even-odd ray cast against one simple loop; for a single loop this matches non-zero. */
+function loopContains(l: Loop, point: Point): boolean {
+  let inside = false;
+  for (let i = 0, j = l.length - 1; i < l.length; j = i, i += 1) {
+    const a = l[i]!;
+    const b = l[j]!;
+    if (a.y > point.y !== b.y > point.y) {
+      const x = ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
+      if (point.x < x) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Indices of every closed loop containing the point, smallest area first — the
+ * most specific shape under a click is usually the one being reached for, such
+ * as a small hole inside a large outline.
+ */
+export function pickLoopsAt(loops: readonly Loop[], point: Point): number[] {
+  return loops
+    .map((l, index) => ({ l, index }))
+    .filter(({ l }) => l.length >= MIN_LOOP_VERTICES && loopContains(l, point))
+    .sort((a, b) => Math.abs(signedArea(a.l)) - Math.abs(signedArea(b.l)) || a.index - b.index)
+    .map(({ index }) => index);
+}
+
+/**
+ * Next pick when clicking the same spot again: the candidate after `current`,
+ * wrapping around, or the first candidate when `current` is not among them.
+ */
+export function cyclePick(candidates: readonly number[], current: number | null): number | null {
+  if (candidates.length === 0) return null;
+  const at = current == null ? -1 : candidates.indexOf(current);
+  if (at < 0) return candidates[0]!;
+  return candidates[(at + 1) % candidates.length]!;
+}

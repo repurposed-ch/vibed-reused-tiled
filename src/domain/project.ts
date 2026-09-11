@@ -127,12 +127,18 @@ function migrateMaterials(root: Record<string, unknown>): unknown[] {
 
   return (root.materials as LegacyMaterial[]).map((m) => {
     if (m && typeof m === 'object' && m.sdf && typeof m.id === 'string') {
+      // This runs on every load, not only on legacy data, so it must carry through every
+      // field a current material has — anything dropped here is reset to its zod default
+      // on each reload and an authored relief or roughness would silently vanish.
+      const raw = m as Record<string, unknown>;
       return {
         type: 'MaterialDefinition',
         id: m.id,
         name: typeof m.name === 'string' ? m.name : 'Material',
         seed: typeof m.seed === 'number' ? m.seed : 1,
         sdf: m.sdf,
+        ...(raw.relief !== undefined ? { relief: raw.relief } : {}),
+        ...(raw.roughness !== undefined ? { roughness: raw.roughness } : {}),
       };
     }
     return createMaterialDefinition({

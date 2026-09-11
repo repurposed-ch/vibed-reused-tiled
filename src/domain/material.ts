@@ -347,6 +347,11 @@ export const SdfNodeJsonSchema: z.ZodType<SdfNodeJson> = z.lazy(() =>
   ]),
 );
 
+/** Height the 0..1 field spans, in meters. 1.5 mm reads as fired-clay texture. */
+export const DEFAULT_RELIEF = 0.0015;
+/** Roughness at field 0 and at field 1: low points stay matte, high points wear smooth. */
+export const DEFAULT_ROUGHNESS: [number, number] = [0.9, 0.5];
+
 export const MaterialDefinitionJsonSchema = z.object({
   type: z.literal('MaterialDefinition'),
   id: z.string().min(1),
@@ -354,6 +359,17 @@ export const MaterialDefinitionJsonSchema = z.object({
   /** Noise / procedural seed (SDF state, not appearance). */
   seed: z.number(),
   sdf: SdfNodeJsonSchema,
+  /**
+   * Surface relief depth in meters. The SDF says what shape the relief is; this says how
+   * deep. Defaulted rather than optional, so projects stored before it existed fill in on
+   * parse and need no migration — the same trick TileColorJson.c uses.
+   */
+  /** Negative engraves: bright areas sink, so a light joint line reads as recessed. */
+  relief: z.number().min(-0.05).max(0.05).default(DEFAULT_RELIEF),
+  /** Roughness mapped from the field: [at 0, at 1]. Reversed ranges are fine. */
+  roughness: z
+    .tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
+    .default(DEFAULT_ROUGHNESS),
 });
 
 export type MaterialDefinitionJson = z.infer<typeof MaterialDefinitionJsonSchema>;
@@ -367,5 +383,7 @@ export function createMaterialDefinition(
     name: partial?.name ?? 'Material',
     seed: partial?.seed ?? 1,
     sdf: partial?.sdf ?? { op: 'noise', scale: 4, octaves: 3 },
+    relief: partial?.relief ?? DEFAULT_RELIEF,
+    roughness: partial?.roughness ?? [...DEFAULT_ROUGHNESS],
   };
 }
