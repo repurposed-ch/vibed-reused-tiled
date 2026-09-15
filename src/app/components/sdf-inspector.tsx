@@ -21,11 +21,13 @@ const SEVERITY_COLOR: Record<SeamSeverity, string> = {
 const LABEL_W = '7rem';
 
 /** Range inputs must stay outside `.field` — its padding/border wrecks the track. */
-const RANGE_STYLE = { flex: 1, accentColor: '#d9773a', background: 'transparent' } as const;
+/** `minWidth: 0` matters: a range input has an intrinsic width it will not shrink below. */
+const RANGE_STYLE = { flex: 1, minWidth: 0, accentColor: '#d9773a', background: 'transparent' } as const;
 
 const NUM_STYLE = {
   width: '5rem',
-  flex: '0 0 5rem',
+  flex: '0 1 5rem',
+  minWidth: '3.5rem',
   background: '#1a1714',
   border: '1px solid #4a4036',
   color: '#f3ebe1',
@@ -38,7 +40,16 @@ function ParamLabel({ text }: { text: string }) {
   return (
     <label
       className="mono muted"
-      style={{ width: LABEL_W, flex: `0 0 ${LABEL_W}`, fontSize: '0.72rem', margin: 0 }}
+      style={{
+        width: LABEL_W,
+        flex: `0 1 ${LABEL_W}`,
+        minWidth: '3rem',
+        fontSize: '0.72rem',
+        margin: 0,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
     >
       {text}
     </label>

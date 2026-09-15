@@ -27,6 +27,7 @@ export function App() {
             <Route index element={<OverviewPage />} />
             <Route path="tiles" element={<TilesPage />} />
             <Route path="materials" element={<MaterialsPage />} />
+            <Route path="materials/:materialId" element={<MaterialsPage />} />
             <Route path="stock" element={<StockPage />} />
             <Route path="tile-schema" element={<TileSchemaPage />} />
             <Route path="boundaries" element={<BoundariesPage />} />
