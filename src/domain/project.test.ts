@@ -218,12 +218,13 @@ describe('tile schema persistence', () => {
 
   it('round-trips a tile schema through the project document', () => {
     const project = createDefaultProject();
+    // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
+    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
+    // over all of them has no module to find.
+    const rapportTiles = project.tileDefinitions.slice(0, 2);
     const module = findRapportModule({
-      tiles: project.tileDefinitions,
-      targets: project.tileDefinitions.map((t) => ({
-        tileDefinitionId: t.id,
-        areaShare: 50,
-      })),
+      tiles: rapportTiles,
+      targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
     });
     expect(module).not.toBeNull();
     if (!module) return;
@@ -241,12 +242,13 @@ describe('tile schema persistence', () => {
 
   it('solves from the tile schema when the project carries one', () => {
     const project = createDefaultProject();
+    // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
+    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
+    // over all of them has no module to find.
+    const rapportTiles = project.tileDefinitions.slice(0, 2);
     const module = findRapportModule({
-      tiles: project.tileDefinitions,
-      targets: project.tileDefinitions.map((t) => ({
-        tileDefinitionId: t.id,
-        areaShare: 50,
-      })),
+      tiles: rapportTiles,
+      targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
     });
     expect(module).not.toBeNull();
     if (!module) return;

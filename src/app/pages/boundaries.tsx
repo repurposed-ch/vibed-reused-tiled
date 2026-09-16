@@ -13,6 +13,7 @@ import {
   type Loop,
 } from '@/render/svg/boundary-draw-geometry';
 import { resolveBoundaryRegion } from '@/workflow/boundary-region';
+import { NumberField } from '../components/number-field';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 
@@ -222,14 +223,11 @@ export function BoundariesPage() {
           </div>
           <div className="field">
             <label>Custom (m)</label>
-            <input
-              type="number"
+            <NumberField
+              value={ui.drawResolution}
+              onChange={(v) => patchUi({ drawResolution: v })}
               min={0.01}
               step={0.01}
-              value={ui.drawResolution}
-              onChange={(e) =>
-                patchUi({ drawResolution: Math.max(0.01, Number(e.target.value) || 0.01) })
-              }
             />
           </div>
         </div>

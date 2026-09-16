@@ -77,9 +77,13 @@ describe('solveSignature', () => {
     };
     expect(solveSignature(moved, 1)).not.toBe(base);
 
+    // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
+    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
+    // over all of them has no module to find.
+    const rapportTiles = project.tileDefinitions.slice(0, 2);
     const module = findRapportModule({
-      tiles: project.tileDefinitions,
-      targets: project.tileDefinitions.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
+      tiles: rapportTiles,
+      targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
     });
     expect(module).not.toBeNull();
     if (!module) return;
@@ -100,9 +104,13 @@ describe('estimateSolveCells', () => {
 
   it('scales with boundary area over cell size', () => {
     const project = baseProject();
+    // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
+    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
+    // over all of them has no module to find.
+    const rapportTiles = project.tileDefinitions.slice(0, 2);
     const module = findRapportModule({
-      tiles: project.tileDefinitions,
-      targets: project.tileDefinitions.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
+      tiles: rapportTiles,
+      targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
     });
     expect(module).not.toBeNull();
     if (!module) return;

@@ -1,6 +1,7 @@
 import { mulberry32, sampleStock } from '@/workflow/sample-stock';
 import { solveLayout } from '@/workflow/solve-layout';
 import { useState } from 'react';
+import { NumberField } from '../components/number-field';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 
@@ -54,11 +55,7 @@ export function SolvePage() {
         <div className="row">
           <div className="field">
             <label>Seed</label>
-            <input
-              type="number"
-              value={seed}
-              onChange={(e) => setSeed(Number(e.target.value) || 0)}
-            />
+            <NumberField value={seed} onChange={setSeed} integer />
           </div>
           <button type="button" className="btn primary" onClick={() => run(seed)}>
             Run solve

@@ -702,6 +702,12 @@ pre {
   border-color: var(--accent);
 }
 
+/* Match the material cards: the tile preview sits in its own framed box. */
+.card > .fluid-svg {
+  border: 1px solid var(--line);
+  background: var(--bg0);
+}
+
 .card-title {
   font-size: 0.9rem;
   font-weight: 600;
@@ -771,6 +777,12 @@ pre {
   width: clamp(7rem, 24vw, 11rem);
 }
 
+/* The tile preview is an SVG, and `.fluid-svg` would otherwise stretch it to the bar. */
+.sticky-preview .fluid-svg {
+  flex: 0 0 auto;
+  width: clamp(8rem, 28vw, 13rem);
+}
+
 .sticky-preview-controls {
   flex: 1 1 auto;
   min-width: 9rem;
@@ -786,5 +798,9 @@ pre {
 
   .sticky-preview .material-thumb {
     width: clamp(5.5rem, 32vw, 9rem);
+  }
+
+  .sticky-preview .fluid-svg {
+    width: clamp(6.5rem, 38vw, 10rem);
   }
 }

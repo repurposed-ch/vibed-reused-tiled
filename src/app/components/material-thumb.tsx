@@ -1,31 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { tileDisplayColor, type MaterialDefinitionJson, type TilingProjectJson } from '@/domain/project';
-import { bakeMaterialTexture, textureCacheKey, type BakeTileInput } from '@/render/materials';
-
-/**
- * Baked preview images, keyed by recipe.
- *
- * A grid of cards re-bakes on every mount otherwise, and the editor's preview re-bakes
- * every time you step back through a slider. Capped because each entry is a PNG data URL
- * of a few tens of kB and an editing session produces one per committed draft.
- */
-const CACHE_LIMIT = 48;
-const urlCache = new Map<string, string>();
-
-function cacheKey(input: BakeTileInput, size: number, lit: boolean): string {
-  return `${textureCacheKey(input, size)}|${lit ? 'lit' : 'albedo'}`;
-}
-
-function bake(input: BakeTileInput, size: number, lit: boolean, key: string): string | null {
-  try {
-    const { dataUrl } = bakeMaterialTexture(input, size, { primary: lit ? 'lit' : 'albedo' });
-    urlCache.set(key, dataUrl);
-    if (urlCache.size > CACHE_LIMIT) urlCache.delete(urlCache.keys().next().value!);
-    return dataUrl;
-  } catch {
-    return null;
-  }
-}
+import type { BakeTileInput } from '@/render/materials';
+import { useBakedUrl } from './baked-url';
 
 /**
  * What a material should be previewed as: the colour and shape of the first tile that
@@ -81,21 +57,7 @@ export function MaterialThumb({
     (): BakeTileInput => ({ material, color: { mode: 'brightness', color: colorHex }, length, width }),
     [material, colorHex, length, width],
   );
-  const key = useMemo(() => cacheKey(input, size, lit), [input, size, lit]);
-  const [url, setUrl] = useState<string | null>(() => urlCache.get(key) ?? null);
-
-  useEffect(() => {
-    const hit = urlCache.get(key);
-    if (hit) {
-      setUrl(hit);
-      return;
-    }
-    // Off the paint path: a grid of cards would otherwise bake them all before first paint.
-    // A timeout rather than an animation frame — the latter never fires in a background
-    // tab, which would leave a reopened gallery blank until it is looked at.
-    const timer = window.setTimeout(() => setUrl(bake(input, size, lit, key)), 0);
-    return () => window.clearTimeout(timer);
-  }, [key, input, size, lit]);
+  const url = useBakedUrl(input, size, lit ? 'lit' : 'albedo');
 
   if (!url) return <div className="material-thumb" style={{ ...style, background: colorHex }} />;
   return <img className="material-thumb" src={url} alt={alt} style={style} />;

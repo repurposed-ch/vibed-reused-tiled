@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 import { JointPanel } from '../components/joint-panel';
+import { NumberField, TextField } from '../components/number-field';
 import {
   addMasterLevelAboveRoot,
   bestSpanForDrag,
@@ -96,15 +97,13 @@ function AxisFields({
   const component = (which: 'u' | 'v', axis: 'i' | 'j') => {
     const value = which === 'u' ? u : v;
     return (
-      <input
-        type="number"
+      <NumberField
         // The visible label is split across a row and a column header, so the
         // field needs its own name for anything not reading the grid.
         aria-label={`${which}.${axis}`}
         value={value[axis]}
-        onChange={(e) =>
-          onChange(which, { ...value, [axis]: Math.trunc(Number(e.target.value) || 0) })
-        }
+        onChange={(next) => onChange(which, { ...value, [axis]: next })}
+        integer
       />
     );
   };
@@ -760,28 +759,28 @@ export function TileSchemaPage() {
               <div className="row">
                 <div className="field" style={{ flex: 1 }}>
                   <label>Name</label>
-                  <input value={tileGrid.name} onChange={(e) => patchGrid({ name: e.target.value || 'Repeat' })} />
+                  <TextField
+                    value={tileGrid.name}
+                    onChange={(name) => patchGrid({ name })}
+                    fallback="Repeat"
+                  />
                 </div>
                 <div className="field">
                   <label>Cell x (m)</label>
-                  <input
-                    type="number"
-                    step="0.005"
+                  <NumberField
                     value={tileGrid.cell.x}
-                    onChange={(e) =>
-                      patchGrid({ cell: { ...tileGrid.cell, x: Number(e.target.value) || tileGrid.cell.x } })
-                    }
+                    onChange={(x) => patchGrid({ cell: { ...tileGrid.cell, x } })}
+                    min={0.005}
+                    step={0.005}
                   />
                 </div>
                 <div className="field">
                   <label>Cell y (m)</label>
-                  <input
-                    type="number"
-                    step="0.005"
+                  <NumberField
                     value={tileGrid.cell.y}
-                    onChange={(e) =>
-                      patchGrid({ cell: { ...tileGrid.cell, y: Number(e.target.value) || tileGrid.cell.y } })
-                    }
+                    onChange={(y) => patchGrid({ cell: { ...tileGrid.cell, y } })}
+                    min={0.005}
+                    step={0.005}
                   />
                 </div>
               </div>
@@ -789,28 +788,20 @@ export function TileSchemaPage() {
               <div className="row">
                 <div className="field">
                   <label>Columns</label>
-                  <input
-                    type="number"
-                    min={1}
+                  <NumberField
                     value={tileGrid.extent.iCount}
-                    onChange={(e) =>
-                      patchGrid({
-                        extent: { ...tileGrid.extent, iCount: Math.max(1, Number(e.target.value) || 1) },
-                      })
-                    }
+                    onChange={(iCount) => patchGrid({ extent: { ...tileGrid.extent, iCount } })}
+                    min={1}
+                    integer
                   />
                 </div>
                 <div className="field">
                   <label>Rows</label>
-                  <input
-                    type="number"
-                    min={1}
+                  <NumberField
                     value={tileGrid.extent.jCount}
-                    onChange={(e) =>
-                      patchGrid({
-                        extent: { ...tileGrid.extent, jCount: Math.max(1, Number(e.target.value) || 1) },
-                      })
-                    }
+                    onChange={(jCount) => patchGrid({ extent: { ...tileGrid.extent, jCount } })}
+                    min={1}
+                    integer
                   />
                 </div>
                 <div className="field" style={{ flex: 1 }}>
@@ -1020,34 +1011,24 @@ export function TileSchemaPage() {
                 <div className="row">
                   <div className="field">
                     <label>Block columns</label>
-                    <input
-                      type="number"
-                      min={1}
+                    <NumberField
                       value={activeMaster.extent.iCount}
-                      onChange={(e) =>
-                        setDraft(
-                          setLevelExtent(draft, activeMaster.id, {
-                            ...activeMaster.extent!,
-                            iCount: Math.max(1, Number(e.target.value) || 1),
-                          }),
-                        )
+                      onChange={(iCount) =>
+                        setDraft(setLevelExtent(draft, activeMaster.id, { ...activeMaster.extent!, iCount }))
                       }
+                      min={1}
+                      integer
                     />
                   </div>
                   <div className="field">
                     <label>Block rows</label>
-                    <input
-                      type="number"
-                      min={1}
+                    <NumberField
                       value={activeMaster.extent.jCount}
-                      onChange={(e) =>
-                        setDraft(
-                          setLevelExtent(draft, activeMaster.id, {
-                            ...activeMaster.extent!,
-                            jCount: Math.max(1, Number(e.target.value) || 1),
-                          }),
-                        )
+                      onChange={(jCount) =>
+                        setDraft(setLevelExtent(draft, activeMaster.id, { ...activeMaster.extent!, jCount }))
                       }
+                      min={1}
+                      integer
                     />
                   </div>
                   <p className="muted" style={{ flex: 1, fontSize: '0.8rem' }}>

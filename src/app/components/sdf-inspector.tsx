@@ -11,6 +11,7 @@ import {
   type SeamIssue,
   type SeamSeverity,
 } from '@/render/materials';
+import { NumberField } from './number-field';
 
 const SEVERITY_COLOR: Record<SeamSeverity, string> = {
   error: '#c45c5c',
@@ -87,17 +88,14 @@ function NumberControl({
           style={RANGE_STYLE}
           onChange={(e) => onChange(Number(e.target.value))}
         />
-        <input
-          type="number"
+        <NumberField
+          value={value}
+          onChange={onChange}
           min={param.min}
           max={param.max}
           step={param.step}
-          value={Number(value.toFixed(4))}
+          format={(v) => String(Number(v.toFixed(4)))}
           style={NUM_STYLE}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (Number.isFinite(n)) onChange(Math.min(Math.max(n, param.min), param.max));
-          }}
         />
       </div>
       <Hint text={param.hint} />
@@ -161,19 +159,17 @@ function Vec2Control({
       <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
         <ParamLabel text={label} />
         {([0, 1] as const).map((i) => (
-          <input
+          <NumberField
             key={i}
-            type="number"
-            step={step}
-            value={Number(value[i].toFixed(4))}
-            style={NUM_STYLE}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (!Number.isFinite(n)) return;
+            value={value[i]}
+            onChange={(n) => {
               const next: [number, number] = [...value] as [number, number];
               next[i] = n;
               onChange(next);
             }}
+            step={step}
+            format={(v) => String(Number(v.toFixed(4)))}
+            style={NUM_STYLE}
           />
         ))}
       </div>
@@ -262,20 +258,19 @@ function ScaleFactorControl({
       <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
         <ParamLabel text={perAxis ? '1 / (x, y)' : '1 / m'} />
         {(perAxis ? [0, 1] : [0]).map((i) => (
-          <input
+          <NumberField
             key={i}
-            type="number"
-            min={1}
-            max={64}
-            step={1}
             value={divisor(pair[i]!)}
-            style={NUM_STYLE}
-            onChange={(e) => {
-              const m = Math.max(1, Math.round(Number(e.target.value) || 1));
+            onChange={(m) => {
               const next: [number, number] = [...pair] as [number, number];
               next[i] = 1 / m;
               onChange(perAxis ? next : next[0]);
             }}
+            min={1}
+            max={64}
+            step={1}
+            integer
+            style={NUM_STYLE}
           />
         ))}
       </div>

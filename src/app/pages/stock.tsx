@@ -1,4 +1,5 @@
 import type { StockEntryJson } from '@/domain/project';
+import { NumberField } from '../components/number-field';
 import { useProject } from '../project-context';
 
 export function StockPage() {
@@ -67,17 +68,13 @@ export function StockPage() {
                     {(!entry || entry.kind === 'exact') && (
                       <div className="field">
                         <label>Count</label>
-                        <input
-                          type="number"
-                          min={0}
+                        <NumberField
                           value={entry?.kind === 'exact' ? entry.count : 0}
-                          onChange={(e) =>
-                            upsert(tile.id, {
-                              tileDefinitionId: tile.id,
-                              kind: 'exact',
-                              count: Math.max(0, Number(e.target.value) || 0),
-                            })
+                          onChange={(count) =>
+                            upsert(tile.id, { tileDefinitionId: tile.id, kind: 'exact', count })
                           }
+                          min={0}
+                          integer
                         />
                       </div>
                     )}
@@ -109,18 +106,12 @@ export function StockPage() {
                         {Object.entries(entry.params).map(([key, value]) => (
                           <div className="field" key={key}>
                             <label>{key}</label>
-                            <input
-                              type="number"
+                            <NumberField
                               value={value}
-                              onChange={(e) =>
-                                upsert(tile.id, {
-                                  ...entry,
-                                  params: {
-                                    ...entry.params,
-                                    [key]: Number(e.target.value) || 0,
-                                  },
-                                })
+                              onChange={(next) =>
+                                upsert(tile.id, { ...entry, params: { ...entry.params, [key]: next } })
                               }
+                              min={0}
                             />
                           </div>
                         ))}

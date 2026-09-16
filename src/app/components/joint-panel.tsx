@@ -1,5 +1,6 @@
 import { MAX_JOINT_DEPTH, sanitizeJoint, type ProjectJointJson } from '@/domain/project';
 import { useProject } from '../project-context';
+import { NumberField } from './number-field';
 import { TileColorEditor } from './tile-color-editor';
 
 /**
@@ -35,12 +36,11 @@ export function JointPanel({
         {onWidthChange && (
           <div className="field">
             <label>Width (mm)</label>
-            <input
-              type="number"
-              step="0.5"
-              min="0"
+            <NumberField
               value={mm(sanitizeJoint(width))}
-              onChange={(e) => onWidthChange(Math.max(0, Number(e.target.value) || 0) / 1000)}
+              onChange={(v) => onWidthChange(v / 1000)}
+              min={0}
+              step={0.5}
             />
           </div>
         )}
@@ -56,17 +56,12 @@ export function JointPanel({
         </div>
         <div className="field">
           <label>Recess (mm)</label>
-          <input
-            type="number"
-            step="0.5"
-            min="0"
-            max={MAX_JOINT_DEPTH * 1000}
+          <NumberField
             value={mm(joint.depth)}
-            onChange={(e) =>
-              patch({
-                depth: Math.min(MAX_JOINT_DEPTH, Math.max(0, Number(e.target.value) || 0) / 1000),
-              })
-            }
+            onChange={(v) => patch({ depth: v / 1000 })}
+            min={0}
+            max={MAX_JOINT_DEPTH * 1000}
+            step={0.5}
           />
         </div>
       </div>

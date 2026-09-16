@@ -282,6 +282,7 @@ export function createDefaultProject(): TilingProjectJson {
   const materials = defaultMaterials();
   const terracotta = materials.find((m) => m.name === 'terracotta')!;
   const stone = materials.find((m) => m.name === 'stone')!;
+  const byName = (name: string) => materials.find((m) => m.name === name)!;
 
   const tileA = createTileDefinition({
     name: 'Reuse A',
@@ -316,6 +317,63 @@ export function createDefaultProject(): TilingProjectJson {
     },
   });
 
+  /**
+   * Formats imported from a hand-tuned project. Renamed by format — the author's names were
+   * "Reuse A", "Reuse B", "2x3" and "Tile", which collide with the two above or say nothing —
+   * and repointed to the materials imported alongside them. Their colours, edge rhythms,
+   * corner rounding and thickness are kept as authored.
+   */
+  const imported = [
+    createTileDefinition({
+      name: 'Square 620',
+      length: 0.62,
+      width: 0.62,
+      thickness: 0.03,
+      materialId: byName('arabescato').id,
+      color: { mode: 'palette', colors: ['#f5f7d9', '#f5f7d9', '#f5f7d9'], c: [1, 1, 1] },
+      rhythm: {
+        south: { name: 'B', mirrored: true },
+        east: { name: 'A', mirrored: false },
+        north: { name: 'A', mirrored: true },
+        west: { name: 'B', mirrored: false },
+      },
+      cornerRounding: 0.025,
+    }),
+    createTileDefinition({
+      name: 'Square 200',
+      length: 0.2,
+      width: 0.2,
+      thickness: 0.025,
+      materialId: byName('worn terracotta').id,
+      color: { mode: 'brightness', color: '#4517ee' },
+      cornerRounding: 0.045,
+    }),
+    createTileDefinition({
+      name: 'Slab 200 x 300',
+      length: 0.2,
+      width: 0.3,
+      thickness: 0.02,
+      materialId: byName('worn terracotta').id,
+      color: { mode: 'brightness', color: '#c4a574' },
+      cornerRounding: 0.02,
+    }),
+    createTileDefinition({
+      name: 'Slab 200 x 400',
+      length: 0.2,
+      width: 0.4,
+      thickness: 0.02,
+      materialId: byName('flamed granite').id,
+      color: { mode: 'palette', colors: ['#8e9bcc', '#9a9fb1', '#8a92b2'], c: [0.61, 0.55, 0.98] },
+      rhythm: {
+        south: { name: 'A', mirrored: false },
+        east: { name: 'B', mirrored: false },
+        north: { name: 'A', mirrored: true },
+        west: { name: 'B', mirrored: true },
+      },
+      cornerRounding: 0,
+    }),
+  ];
+
   return {
     type: 'TilingProject',
     schemaVersion: 4,
@@ -324,7 +382,7 @@ export function createDefaultProject(): TilingProjectJson {
       updatedAt: new Date().toISOString(),
     },
     materials,
-    tileDefinitions: [tileA, tileB],
+    tileDefinitions: [tileA, tileB, ...imported],
     stock: {
       type: 'StockState',
       entries: [
