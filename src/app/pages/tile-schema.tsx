@@ -90,12 +90,6 @@ function AxisFields({
   v: IntVec2;
   onChange: (which: 'u' | 'v', value: IntVec2) => void;
 }) {
-  const heading = {
-    fontSize: '0.7rem',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.04em',
-    textAlign: 'center' as const,
-  };
 
   const component = (which: 'u' | 'v', axis: 'i' | 'j') => {
     const value = which === 'u' ? u : v;
@@ -132,10 +126,10 @@ function AxisFields({
         }}
       >
         <span />
-        <span className="muted" style={heading}>
+        <span className="muted small" style={{ textAlign: 'center' }}>
           i
         </span>
-        <span className="muted" style={heading}>
+        <span className="muted small" style={{ textAlign: 'center' }}>
           j
         </span>
         {rowLabel('u')}
@@ -144,6 +138,26 @@ function AxisFields({
         {rowLabel('v')}
         {component('v', 'i')}
         {component('v', 'j')}
+      </div>
+    </div>
+  );
+}
+
+/** Margin of spare cells the canvas keeps around the block and its axes. */
+function RingField({ pad, onChange }: { pad: number; onChange: (next: number) => void }) {
+  return (
+    <div className="field" style={{ minWidth: 'auto' }}>
+      <label>Ring</label>
+      <div className="row gap-1">
+        <button type="button" className="btn" onClick={() => onChange(Math.max(1, pad - 1))}>
+          −
+        </button>
+        <span className="mono" style={{ alignSelf: 'center', minWidth: '1.5rem', textAlign: 'center' }}>
+          {pad}
+        </span>
+        <button type="button" className="btn" onClick={() => onChange(Math.min(12, pad + 1))}>
+          +
+        </button>
       </div>
     </div>
   );
@@ -944,53 +958,7 @@ export function TileSchemaPage() {
                 </p>
               )}
 
-              <div className="row mt-3">
-                <label className="field" style={{ minWidth: 'auto' }}>
-                  <span>Edit axes</span>
-                  <input
-                    type="checkbox"
-                    checked={axesOn}
-                    onChange={(e) => setAxesOn(e.target.checked)}
-                  />
-                </label>
-              </div>
-
-              {axesOn && innerMaster && (
-                <div className="row" style={{ alignItems: 'flex-end' }}>
-                  <AxisFields
-                    u={innerMaster.u}
-                    v={innerMaster.v}
-                    onChange={(which, value) => patchMaster(innerMaster.id, { [which]: value })}
-                  />
-                  <div className="field">
-                    <label>Ring</label>
-                    <div className="row gap-1">
-                      <button type="button" className="btn" onClick={() => setPad(Math.max(1, pad - 1))}>
-                        −
-                      </button>
-                      <span
-                        className="mono"
-                        style={{ alignSelf: 'center', minWidth: '1.5rem', textAlign: 'center' }}
-                      >
-                        {pad}
-                      </span>
-                      <button type="button" className="btn" onClick={() => setPad(Math.min(12, pad + 1))}>
-                        +
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div
-                className="canvas-frame mt-4"
-                style={{
-                  padding: 'var(--s4)',
-                  // The axes deliberately leave the grid, so the frame must stop
-                  // clipping while they are on.
-                  overflow: axesOn ? 'visible' : 'auto',
-                }}
-              >
+              <div className="canvas-frame bare mt-4">
                 <TileGridCanvas
                   extent={tileGrid.extent}
                   pad={pad}
@@ -1011,9 +979,28 @@ export function TileSchemaPage() {
               </div>
               <p className="note">
                 {axesOn
-                  ? 'Drag either arrow tip to a grid corner to set how the repeat steps. An axis that leaves the grid is normal — grow the ring to reach further.'
+                  ? 'Drag either arrow tip to a grid corner to set how the repeat steps. The view grows to keep both axes in sight; the ring adds room around them.'
                   : "Drag to lay a tile — the footprint snaps to the format's real size, and the drag's shape picks upright or turned. Click an occurrence to remove it."}
               </p>
+
+              <label className="row tight mt-3">
+                <input
+                  type="checkbox"
+                  checked={axesOn}
+                  onChange={(e) => setAxesOn(e.target.checked)}
+                />
+                Edit axes
+              </label>
+              {axesOn && innerMaster && (
+                <div className="row mt-3" style={{ alignItems: 'flex-end' }}>
+                  <AxisFields
+                    u={innerMaster.u}
+                    v={innerMaster.v}
+                    onChange={(which, value) => patchMaster(innerMaster.id, { [which]: value })}
+                  />
+                  <RingField pad={pad} onChange={setPad} />
+                </div>
+              )}
               {message && <p className="muted mt-2">{message}</p>}
             </>
           )}
@@ -1101,29 +1088,7 @@ export function TileSchemaPage() {
                 </div>
               )}
 
-              <div className="row">
-                <AxisFields
-                  u={activeMaster.u}
-                  v={activeMaster.v}
-                  onChange={(which, value) => patchMaster(activeMaster.id, { [which]: value })}
-                />
-                <div className="field">
-                  <label>Ring</label>
-                  <div className="row gap-1">
-                    <button type="button" className="btn" onClick={() => setPad(Math.max(1, pad - 1))}>
-                      −
-                    </button>
-                    <span className="mono" style={{ alignSelf: 'center', minWidth: '1.5rem', textAlign: 'center' }}>
-                      {pad}
-                    </span>
-                    <button type="button" className="btn" onClick={() => setPad(Math.min(12, pad + 1))}>
-                      +
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="canvas-frame mt-4" style={{ padding: 'var(--s4)' }}>
+              <div className="canvas-frame bare mt-4">
                 <TileGridCanvas
                   extent={canvasExtent}
                   pad={pad}
@@ -1142,6 +1107,15 @@ export function TileSchemaPage() {
                 {!findTileGrid(draft, activeMaster.childId) &&
                   ' Above the tile grid this drawing is schematic — the preview below is the truth.'}
               </p>
+
+              <div className="row mt-3" style={{ alignItems: 'flex-end' }}>
+                <AxisFields
+                  u={activeMaster.u}
+                  v={activeMaster.v}
+                  onChange={(which, value) => patchMaster(activeMaster.id, { [which]: value })}
+                />
+                <RingField pad={pad} onChange={setPad} />
+              </div>
 
               {levelCheck && !levelCheck.ok && (
                 <p className="warn mt-2">

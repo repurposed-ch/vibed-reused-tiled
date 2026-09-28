@@ -398,6 +398,33 @@ textarea {
   background: transparent;
 }
 
+/* The swatch is the whole control: no padding, or it shrinks to a line. */
+input[type='color'] {
+  width: 3rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  background: none;
+  cursor: pointer;
+}
+
+.field input[type='color'] {
+  width: 100%;
+  padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type='color']::-webkit-color-swatch {
+  border: 0;
+}
+
+input[type='color']::-moz-color-swatch {
+  border: 0;
+}
+
 .field textarea {
   min-height: 5rem;
   resize: vertical;
@@ -696,6 +723,13 @@ textarea {
   overflow: auto;
   max-width: 100%;
   min-width: 0;
+}
+
+/* For canvases that draw their own grid, so two grids never disagree. */
+.canvas-frame.bare {
+  background: var(--surface);
+  padding: 0;
+  min-height: 0;
 }
 
 .canvas-frame svg,

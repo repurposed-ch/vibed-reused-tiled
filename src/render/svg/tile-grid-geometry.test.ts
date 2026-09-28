@@ -4,6 +4,7 @@ import {
   cellRect,
   clampToExtent,
   cornerPoint,
+  fitWindow,
   normaliseDrag,
   pointToCell,
   pointToCorner,
@@ -22,16 +23,50 @@ describe('canvasWindow', () => {
     expect(viewBox(w)).toBe('-1 -1 6 4');
   });
 
-  it('is set by the ring alone, so a long vector cannot shrink the cells', () => {
-    // The staircase generators reach three cells past a 4-wide block. The window
-    // ignores them — the axes are drawn unclipped on top instead, and growing
-    // the ring is what brings a tip back within reach of the pointer.
+  it('is set by the ring alone', () => {
+    // The staircase generators reach three cells past a 4-wide block. This
+    // window ignores them; fitWindow is the one that takes the lattice in.
     const tight = canvasWindow({ iCount: 4, jCount: 7 }, 1);
     expect(tight).toEqual({ minI: -1, maxI: 5, minJ: -1, maxJ: 8, jCount: 7 });
 
     const grown = canvasWindow({ iCount: 4, jCount: 7 }, 4);
     expect(grown.maxI).toBe(8);
     expect(grown.minI).toBe(-4);
+  });
+});
+
+describe('fitWindow', () => {
+  const block = { iCount: 4, jCount: 7 };
+  const plain = { u: { i: 4, j: 0 }, v: { i: 0, j: 7 } };
+
+  it('matches the plain ring when the lattice stays on the block', () => {
+    expect(fitWindow(block, 1, plain)).toEqual(canvasWindow(block, 1));
+  });
+
+  it('grows to hold a generator that leaves the block, and u + v', () => {
+    // Staircase: u reaches three cells past a 4-wide block, v leans left.
+    const w = fitWindow(block, 1, { u: { i: 7, j: 1 }, v: { i: -2, j: 4 } });
+    expect(w.maxI).toBe(8); // u.i + pad
+    expect(w.minI).toBe(-3); // v.i - pad
+    expect(w.maxJ).toBe(8); // block top, since u + v reaches only j = 5
+    expect(w.minJ).toBe(-1);
+    expect(w.jCount).toBe(7);
+
+    const far = fitWindow(block, 1, { u: { i: 3, j: 6 }, v: { i: 2, j: 5 } });
+    expect(far.maxJ).toBe(12); // u.j + v.j + pad
+    expect(far.maxI).toBe(6); // u.i + v.i + pad
+  });
+
+  it('centres the content in the spare columns of a wider frame', () => {
+    const w = fitWindow(block, 1, plain, 13);
+    expect(w.maxI - w.minI).toBe(13);
+    const left = 0 - w.minI;
+    const right = w.maxI - block.iCount;
+    expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
+  });
+
+  it('never trims the content to fit a narrow frame', () => {
+    expect(fitWindow(block, 1, plain, 2)).toEqual(canvasWindow(block, 1));
   });
 });
 

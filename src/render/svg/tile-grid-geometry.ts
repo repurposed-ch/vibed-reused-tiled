@@ -10,11 +10,9 @@ import type { IntVec2 } from '@/domain/tile-grid';
  *
  * A ring of `pad` cells surrounds the extent so lattice vectors can be drawn
  * outside the pattern — which they must be, since a staircase repeat needs
- * generators that leave the pattern's own box. The ring is the interactive area
- * and nothing else feeds the window: the vectors deliberately do *not* stretch
- * it, because a long generator would otherwise shrink every cell to fit. The
- * axes are drawn unclipped on top instead, so a vector reaching past the ring is
- * still visible; growing the ring is what brings its tip back in reach.
+ * generators that leave the pattern's own box. {@link canvasWindow} is that
+ * ring alone; {@link fitWindow}, which the canvas uses, also takes in the
+ * lattice and the frame width.
  *
  * The window's origin goes into the viewBox and nowhere else, so `pad` cannot
  * desynchronise the drawing from the hit-testing.
@@ -39,6 +37,44 @@ export function canvasWindow(extent: Extent, pad: number): CanvasWindow {
     maxI: extent.iCount + pad,
     minJ: -pad,
     maxJ: extent.jCount + pad,
+    jCount: extent.jCount,
+  };
+}
+
+/**
+ * Window for the canvas as drawn: big enough for the block *and* its lattice,
+ * then widened to the frame.
+ *
+ * The content is the block plus the repeat parallelogram (0, u, v, u + v), so a
+ * generator that leaves the block is always in view and in reach. `pad` is the
+ * margin around that content. Cells keep a fixed pixel size, so a larger window
+ * scrolls in its frame rather than shrinking the cells.
+ *
+ * When the frame has room for more than `minCols` columns, the spare columns are
+ * split left and right, which keeps the content centred and lets the cells
+ * outside it serve as the background grid.
+ */
+export function fitWindow(
+  extent: Extent,
+  pad: number,
+  lattice: { u: IntVec2; v: IntVec2 },
+  minCols = 0,
+): CanvasWindow {
+  const { u, v } = lattice;
+  const is = [0, extent.iCount, u.i, v.i, u.i + v.i];
+  const js = [0, extent.jCount, u.j, v.j, u.j + v.j];
+  let minI = Math.min(...is) - pad;
+  let maxI = Math.max(...is) + pad;
+  const spare = minCols - (maxI - minI);
+  if (spare > 0) {
+    minI -= Math.floor(spare / 2);
+    maxI += Math.ceil(spare / 2);
+  }
+  return {
+    minI,
+    maxI,
+    minJ: Math.min(...js) - pad,
+    maxJ: Math.max(...js) + pad,
     jCount: extent.jCount,
   };
 }

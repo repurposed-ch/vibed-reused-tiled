@@ -1,10 +1,16 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import type { IntVec2 } from '@/domain/tile-grid';
 import {
   arrowHead,
-  canvasWindow,
   cellRect,
   cornerPoint,
+  fitWindow,
   normaliseDrag,
   pointToCell,
   pointToCorner,
@@ -25,11 +31,12 @@ import {
  * innermost level a slot is one tile cell; above that it is one copy of the
  * child grid.
  *
- * The ring of cells around the block is the point of the component. Lattice
+ * The cells around the block are the point of the component. Lattice
  * generators routinely leave the pattern's own box — a staircase repeat needs
- * them to — so the ring is a live click target, one cell deep by default and
- * growable, and the drawn window stretches further on its own to keep a vector
- * tip in view.
+ * them to — so the window always holds the whole repeat parallelogram plus a
+ * ring of `pad` cells, and is widened to the frame with the content centred.
+ * The cells outside the block are the background grid, so there is only ever
+ * one grid and it is the tile grid.
  */
 
 export type CanvasMode = 'paint' | 'lattice';
@@ -70,7 +77,7 @@ export type TileGridCanvasProps = {
   onLatticeChange?: (which: 'u' | 'v', value: IntVec2) => void;
   /** Extra marks drawn in svg user units, on top of the cells. */
   overlay?: ReactNode;
-  /** Pixels per cell. The canvas scrolls inside its frame rather than shrinking. */
+  /** Minimum pixels per cell. The canvas scrolls inside its frame rather than shrinking. */
   cellPx?: number;
 };
 
@@ -108,10 +115,31 @@ export function TileGridCanvas({
   cellPx = DEFAULT_CELL_PX,
 }: TileGridCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [hostWidth, setHostWidth] = useState(0);
 
-  const win: CanvasWindow = canvasWindow(extent, pad);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const measure = () => {
+      const width = host.getBoundingClientRect().width;
+      if (width > 0) setHostWidth((prev) => (prev === width ? prev : width));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
+  // Built from the committed vectors, not the live drag, so the view holds
+  // still while a tip is being dragged; it catches up on release.
+  const win: CanvasWindow = fitWindow(extent, pad, { u, v }, Math.floor(hostWidth / cellPx));
   const size = viewBoxSize(win);
+  // Fill the frame when the content fits in it; otherwise keep the minimum cell
+  // size and let the frame scroll.
+  const fills = hostWidth > 0 && size.width * cellPx <= hostWidth;
+  const unitPx = fills ? hostWidth / size.width : cellPx;
   const unclaimedKeys = new Set(unclaimed.map((c) => `${c.i}:${c.j}`));
   const conflictKeys = new Set(conflicts.map((c) => `${c.i}:${c.j}`));
 
@@ -189,178 +217,166 @@ export function TileGridCanvas({
   };
 
   return (
-    <svg
-      ref={svgRef}
-      viewBox={viewBox(win)}
-      preserveAspectRatio="xMidYMid meet"
-      // Explicit pixel size beats the global `svg { width: 100% }` rule so cells
-      // stay hittable on a large extent. `overflow: visible` lets an axis that
-      // reaches past the ring keep drawing instead of being cut off at the grid
-      // edge — the grid no longer resizes itself to contain the vectors.
-      style={{
-        width: `${size.width * cellPx}px`,
-        maxWidth: 'none',
-        height: `${size.height * cellPx}px`,
-        overflow: 'visible',
-        touchAction: 'none',
-        userSelect: 'none',
-        cursor: mode === 'lattice' ? 'crosshair' : 'cell',
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={cancelDrag}
-      onLostPointerCapture={cancelDrag}
-      role="img"
-      aria-label="Tile grid"
-    >
-      {/* Opaque backdrop: the frame behind this has its own 24px grid pattern,
-          which would otherwise show through and read as a second, false grid. */}
-      <rect
-        x={win.minI}
-        y={win.jCount - win.maxJ}
-        width={size.width}
-        height={size.height}
-        fill="#fbfaf7"
-      />
+    <div ref={hostRef}>
+      <svg
+        ref={svgRef}
+        viewBox={viewBox(win)}
+        preserveAspectRatio="xMidYMid meet"
+        // Explicit pixel size beats the global `svg { width: 100% }` rule so cells
+        // stay hittable on a large extent.
+        style={{
+          width: `${size.width * unitPx}px`,
+          maxWidth: 'none',
+          height: `${size.height * unitPx}px`,
+          touchAction: 'none',
+          userSelect: 'none',
+          cursor: mode === 'lattice' ? 'crosshair' : 'cell',
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={cancelDrag}
+        onLostPointerCapture={cancelDrag}
+        role="img"
+        aria-label="Tile grid"
+      >
+        {windowCells(win).map(({ i, j }) => {
+          const rect = cellRect(win, i, j);
+          const inside = i >= 0 && j >= 0 && i < extent.iCount && j < extent.jCount;
+          const key = `${i}:${j}`;
+          const painted = inside ? cellFill?.({ i, j }) ?? null : null;
+          const isUnclaimed = inside && unclaimedKeys.has(key);
+          const isConflict = conflictKeys.has(key);
 
-      {windowCells(win).map(({ i, j }) => {
-        const rect = cellRect(win, i, j);
-        const inside = i >= 0 && j >= 0 && i < extent.iCount && j < extent.jCount;
-        const key = `${i}:${j}`;
-        const painted = inside ? cellFill?.({ i, j }) ?? null : null;
-        const isUnclaimed = inside && unclaimedKeys.has(key);
-        const isConflict = conflictKeys.has(key);
-
-        return (
-          <g key={key}>
-            <rect
-              x={rect.x}
-              y={rect.y}
-              width={1}
-              height={1}
-              fill={
-                painted?.fill ??
-                (isUnclaimed
-                  ? unclaimedAreFaults
-                    ? 'rgba(163,58,42,0.12)'
-                    : 'rgba(107,102,93,0.14)'
-                  : inside
-                    ? '#f3f0ea'
-                    : 'rgba(107,102,93,0.05)')
-              }
-              stroke={painted?.stroke ?? (inside ? '#d8d3c8' : '#c9c3b7')}
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-              strokeDasharray={inside ? undefined : '3 3'}
-            />
-            {isUnclaimed && !painted && (
-              <line
-                x1={rect.x}
-                y1={rect.y + 1}
-                x2={rect.x + 1}
-                y2={rect.y}
-                stroke={unclaimedAreFaults ? '#a33a2a' : 'rgba(107,102,93,0.35)'}
-                strokeWidth={1}
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
-            {/* Conflicts sit on top rather than replacing the fill: a colliding
-                cell is always a claimed one, so painting over it would hide
-                which tile is involved — and the red would never be seen. */}
-            {isConflict && (
+          return (
+            <g key={key}>
               <rect
                 x={rect.x}
                 y={rect.y}
                 width={1}
                 height={1}
-                fill="rgba(163,58,42,0.3)"
-                stroke="#a33a2a"
-                strokeWidth={2}
+                fill={
+                  painted?.fill ??
+                  (isUnclaimed
+                    ? unclaimedAreFaults
+                      ? 'rgba(163,58,42,0.12)'
+                      : 'rgba(107,102,93,0.14)'
+                    : inside
+                      ? '#f3f0ea'
+                      : 'none')
+                }
+                stroke={painted?.stroke ?? (inside ? '#d8d3c8' : '#e6e2da')}
+                strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
-                pointerEvents="none"
               />
-            )}
-            {painted?.label && (
-              <text
-                x={rect.x + 0.5}
-                y={rect.y + 0.5}
-                fill="#1a1714"
-                fontSize={0.32}
-                textAnchor="middle"
-                dominantBaseline="central"
-                pointerEvents="none"
-              >
-                {painted.label}
-              </text>
-            )}
-          </g>
-        );
-      })}
+              {isUnclaimed && !painted && (
+                <line
+                  x1={rect.x}
+                  y1={rect.y + 1}
+                  x2={rect.x + 1}
+                  y2={rect.y}
+                  stroke={unclaimedAreFaults ? '#a33a2a' : 'rgba(107,102,93,0.35)'}
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {/* Conflicts sit on top rather than replacing the fill: a colliding
+                  cell is always a claimed one, so painting over it would hide
+                  which tile is involved — and the red would never be seen. */}
+              {isConflict && (
+                <rect
+                  x={rect.x}
+                  y={rect.y}
+                  width={1}
+                  height={1}
+                  fill="rgba(163,58,42,0.3)"
+                  stroke="#a33a2a"
+                  strokeWidth={2}
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="none"
+                />
+              )}
+              {painted?.label && (
+                <text
+                  x={rect.x + 0.5}
+                  y={rect.y + 0.5}
+                  fill="#1a1714"
+                  fontSize={0.32}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  pointerEvents="none"
+                >
+                  {painted.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
-      {/* Block outline: one slot is one cell, the block is the whole rectangle. */}
-      <rect
-        x={0}
-        y={win.jCount - extent.jCount}
-        width={extent.iCount}
-        height={extent.jCount}
-        fill="none"
-        stroke="#1c1b19"
-        strokeWidth={2}
-        vectorEffect="non-scaling-stroke"
-        pointerEvents="none"
-      />
-
-      {paintPreview && (
+        {/* Block outline: one slot is one cell, the block is the whole rectangle. */}
         <rect
-          x={paintPreview.i}
-          y={win.jCount - paintPreview.j - paintPreview.jSpan}
-          width={paintPreview.iSpan}
-          height={paintPreview.jSpan}
-          fill="rgba(36,80,143,0.16)"
-          stroke="#24508f"
+          x={0}
+          y={win.jCount - extent.jCount}
+          width={extent.iCount}
+          height={extent.jCount}
+          fill="none"
+          stroke="#1c1b19"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
-      )}
 
-      {/* Axes layer: drawn last so it sits over the cells, and only while the
-          flag is on. It is intentionally allowed to leave the grid — a generator
-          usually points outside the pattern, and clipping it would hide where it
-          goes. */}
-      {mode === 'lattice' && (
-        <g pointerEvents="none">
-          {/* The repeat parallelogram: where one copy of the block lands. */}
-          <polygon
-            points={`${originPoint.x},${originPoint.y} ${liveUPoint.x},${liveUPoint.y} ${
-              cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).x
-            },${cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).y} ${liveVPoint.x},${liveVPoint.y}`}
-            fill="rgba(36,80,143,0.06)"
-            stroke="rgba(107,102,93,0.6)"
-            strokeWidth={1}
-            strokeDasharray="4 4"
+        {paintPreview && (
+          <rect
+            x={paintPreview.i}
+            y={win.jCount - paintPreview.j - paintPreview.jSpan}
+            width={paintPreview.iSpan}
+            height={paintPreview.jSpan}
+            fill="rgba(36,80,143,0.16)"
+            stroke="#24508f"
+            strokeWidth={2}
             vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
           />
-          {windowCorners(win).map(({ i, j }) => {
-            const point = cornerPoint(win, i, j);
-            return (
-              <circle
-                key={`c-${i}:${j}`}
-                cx={point.x}
-                cy={point.y}
-                r={0.06}
-                fill="rgba(107,102,93,0.5)"
-              />
-            );
-          })}
-          <LatticeArrow from={originPoint} to={liveUPoint} color="#24508f" label="u" />
-          <LatticeArrow from={originPoint} to={liveVPoint} color="#3d6b35" label="v" />
-        </g>
-      )}
+        )}
 
-      {overlay}
-    </svg>
+        {/* Axes layer: drawn last so it sits over the cells, and only while the
+            flag is on. It is intentionally allowed to leave the grid — a generator
+            usually points outside the pattern, and clipping it would hide where it
+            goes. */}
+        {mode === 'lattice' && (
+          <g pointerEvents="none">
+            {/* The repeat parallelogram: where one copy of the block lands. */}
+            <polygon
+              points={`${originPoint.x},${originPoint.y} ${liveUPoint.x},${liveUPoint.y} ${
+                cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).x
+              },${cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).y} ${liveVPoint.x},${liveVPoint.y}`}
+              fill="rgba(36,80,143,0.06)"
+              stroke="rgba(107,102,93,0.6)"
+              strokeWidth={1}
+              strokeDasharray="4 4"
+              vectorEffect="non-scaling-stroke"
+            />
+            {windowCorners(win).map(({ i, j }) => {
+              const point = cornerPoint(win, i, j);
+              return (
+                <circle
+                  key={`c-${i}:${j}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r={0.06}
+                  fill="rgba(107,102,93,0.5)"
+                />
+              );
+            })}
+            <LatticeArrow from={originPoint} to={liveUPoint} color="#24508f" label="u" />
+            <LatticeArrow from={originPoint} to={liveVPoint} color="#3d6b35" label="v" />
+          </g>
+        )}
+
+        {overlay}
+      </svg>
+    </div>
   );
 }
 
