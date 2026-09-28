@@ -187,27 +187,42 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
     const module = input.designFamily.modules.find((m) => m.id === moduleId);
     if (!module || module.placements.length === 0) continue;
 
-    // Extent from each tile's rotated footprint, so a turned tile counts along the right axis.
-    let moduleW = 0;
-    let moduleH = 0;
+    // Extent of the fully expanded module — every repeat, each tile by its rotated footprint —
+    // since `expandModule` lays down all the repeats and one slot has to hold them.
+    const repeats = module.repeat?.count ?? 1;
+    const offset = module.repeat?.offset ?? { x: 0, y: 0 };
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
     for (const pl of module.placements) {
       const t = tiles.get(pl.tileDefinitionId);
       if (!t) continue;
       const box = poseAabb(pl, t);
-      moduleW = Math.max(moduleW, box.maxX);
-      moduleH = Math.max(moduleH, box.maxY);
+      for (let r = 0; r < repeats; r += 1) {
+        minX = Math.min(minX, box.minX + r * offset.x);
+        minY = Math.min(minY, box.minY + r * offset.y);
+        maxX = Math.max(maxX, box.maxX + r * offset.x);
+        maxY = Math.max(maxY, box.maxY + r * offset.y);
+      }
     }
+    if (!Number.isFinite(minX)) continue;
+    const moduleW = maxX - minX;
+    const moduleH = maxY - minY;
 
-    const repeats = module.repeat?.count ?? 1;
-    for (let r = 0; r < repeats; r += 1) {
+    // One expanded module per slot, until the boundary or the stock runs out.
+    for (;;) {
       if (cursorX + moduleW > bounds.x + bounds.w + 1e-6) {
+        // Wider than the boundary: no row can hold it.
+        if (cursorX === bounds.x) break;
         cursorX = bounds.x;
         cursorY += rowHeight || moduleH;
         rowHeight = 0;
       }
       if (cursorY + moduleH > bounds.y + bounds.h + 1e-6) break;
 
-      const world = { x: cursorX, y: cursorY };
+      // Shift so the expanded footprint's corner, not the module origin, lands on the cursor.
+      const world = { x: cursorX - minX, y: cursorY - minY };
       const added = expandModule(module, world, tiles, remaining);
       if (!added.length) break;
       placements.push(...added);

@@ -9,11 +9,11 @@ import {
   detectClientArProfile,
   type ArClientProfile,
 } from '@/export/user-agent';
-import { Scene3d } from '@/render/r3f/scene';
 import { MAX_TINT, type TileVariationSettings } from '@/render/r3f/tile-instances';
-import { Canvas } from '@react-three/fiber';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Group } from 'three';
+import { CogIcon, DownloadIcon } from '../components/icons';
+import { SceneCanvas } from '../components/scene-canvas';
 import { useProject } from '../project-context';
 import { useUiState } from '../ui-state';
 import '@google/model-viewer';
@@ -112,11 +112,52 @@ export function View3dPage() {
     }
   };
 
-  const primaryLabel = useMemo(() => {
-    if (profile === 'ios') return 'Download USDZ';
-    if (profile === 'android') return 'Download GLB';
-    return null;
-  }, [profile]);
+  /** Hand the scene to the platform's AR viewer: Quick Look on iOS, Scene Viewer on Android. */
+  const viewInAr = async () => {
+    const urls = await ensureExports();
+    if (profile === 'ios') {
+      if (urls.usdzUrl) {
+        const a = document.createElement('a');
+        a.rel = 'ar';
+        a.href = urls.usdzUrl;
+        a.download = 'tiling.usdz';
+        a.click();
+      } else {
+        await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
+      }
+      return;
+    }
+    const mv = modelViewerRef.current;
+    if (mv?.activateAR) {
+      try {
+        await mv.activateAR();
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+    if (profile === 'android' && urls.glbUrl) {
+      window.location.href = androidSceneViewerUrl(urls.glbUrl);
+      return;
+    }
+    setError('AR not available in this browser — download .glb or .usdz instead.');
+  };
+
+  const downloadGlbFile = async () => {
+    try {
+      await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'GLB export failed');
+    }
+  };
+
+  const downloadUsdzFile = async () => {
+    try {
+      await downloadUsdz(exportTarget(exportRootRef.current, rootRef.current), 'tiling.usdz');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'USDZ export failed');
+    }
+  };
 
   if (!hasInstance || !project.instance) {
     return (
@@ -133,253 +174,98 @@ export function View3dPage() {
 
   return (
     <div className="view3d-fullscreen">
-      <div className="view3d-overlay no-print">
-        <h1>3D · AR</h1>
-        <div className="row">
-          {profile === 'ios' && (
-            <>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy}
-                onClick={async () => {
-                  const urls = await ensureExports();
-                  if (urls.usdzUrl) {
-                    const a = document.createElement('a');
-                    a.rel = 'ar';
-                    a.href = urls.usdzUrl;
-                    a.download = 'tiling.usdz';
-                    a.click();
-                  } else {
-                    await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
-                  }
-                }}
-              >
-                {busy ? 'Preparing…' : 'View in AR'}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  const urls = await ensureExports();
-                  if (urls.usdzUrl) {
-                    const a = document.createElement('a');
-                    a.href = urls.usdzUrl;
-                    a.download = 'tiling.usdz';
-                    a.click();
-                  }
-                }}
-              >
-                {primaryLabel}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
-                }}
-              >
-                Download GLB
-              </button>
-            </>
-          )}
-          {profile === 'android' && (
-            <>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy}
-                onClick={async () => {
-                  const urls = await ensureExports();
-                  const mv = modelViewerRef.current;
-                  if (mv?.activateAR) {
-                    try {
-                      await mv.activateAR();
-                      return;
-                    } catch {
-                      /* fall through to intent */
-                    }
-                  }
-                  if (urls.glbUrl) {
-                    window.location.href = androidSceneViewerUrl(urls.glbUrl);
-                  }
-                }}
-              >
-                {busy ? 'Preparing…' : 'View in AR'}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
-                }}
-              >
-                Download GLB
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  try {
-                    await downloadUsdz(exportTarget(exportRootRef.current, rootRef.current), 'tiling.usdz');
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : 'USDZ export failed');
-                  }
-                }}
-              >
-                Download USDZ
-              </button>
-            </>
-          )}
-          {profile === 'other' && (
-            <>
-              <button
-                type="button"
-                className="btn primary"
-                disabled={busy}
-                onClick={async () => {
-                  await ensureExports();
-                  const mv = modelViewerRef.current;
-                  if (mv?.activateAR) {
-                    try {
-                      await mv.activateAR();
-                      return;
-                    } catch {
-                      /* fall through */
-                    }
-                  }
-                  setError('AR not available in this browser — download GLB or USDZ instead.');
-                }}
-              >
-                {busy ? 'Preparing…' : 'View in AR'}
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  await downloadGlb(exportTarget(exportRootRef.current, rootRef.current), 'tiling.glb');
-                }}
-              >
-                Download GLB
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={async () => {
-                  try {
-                    await downloadUsdz(exportTarget(exportRootRef.current, rootRef.current), 'tiling.usdz');
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : 'USDZ export failed');
-                  }
-                }}
-              >
-                Download USDZ
-              </button>
-            </>
-          )}
-        </div>
-        <div className="stack" style={{ gap: '0.35rem', marginTop: '0.5rem', maxWidth: '18rem' }}>
-          <label className="row" style={{ gap: '0.45rem', alignItems: 'center', margin: 0 }}>
-            <input
-              type="checkbox"
-              checked={variation.enabled}
-              onChange={(e) => setVariation({ enabled: e.target.checked })}
-            />
-            <span>Tile variation</span>
-          </label>
-          {variation.enabled && (
-            <>
-              {(
-                [
-                  { key: 'offset', label: 'Offset', max: 1, step: 0.05 },
-                  { key: 'tint', label: 'Tint', max: MAX_TINT, step: 0.01 },
-                ] as const
-              ).map((c) => (
-                <div
-                  key={c.key}
-                  className="row"
-                  style={{ gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap' }}
+      <div className="view3d-ar no-print">
+        <button type="button" className="btn primary" disabled={busy} onClick={() => void viewInAr()}>
+          {busy ? 'Preparing…' : 'View in AR'}
+        </button>
+        {error && <p className="error">{error}</p>}
+      </div>
+
+      <div className="view3d-downloads no-print">
+        <button type="button" className="btn-link" onClick={() => void downloadGlbFile()}>
+          <DownloadIcon /> .glb
+        </button>
+        <button type="button" className="btn-link" onClick={() => void downloadUsdzFile()}>
+          <DownloadIcon /> .usdz
+        </button>
+      </div>
+
+      <div className="view3d-settings no-print">
+        <button
+          type="button"
+          className="btn-icon"
+          popoverTarget="view3d-settings"
+          aria-label="Scene settings"
+          title="Scene settings"
+        >
+          <CogIcon />
+        </button>
+        <div id="view3d-settings" popover="auto" className="view3d-popover">
+          <div className="stack" style={{ gap: '0.35rem' }}>
+            <label className="row" style={{ gap: '0.45rem', alignItems: 'center', margin: 0 }}>
+              <input
+                type="checkbox"
+                checked={variation.enabled}
+                onChange={(e) => setVariation({ enabled: e.target.checked })}
+              />
+              <span>Tile variation</span>
+            </label>
+            {variation.enabled && (
+              <>
+                {(
+                  [
+                    { key: 'offset', label: 'Offset', max: 1, step: 0.05 },
+                    { key: 'tint', label: 'Tint', max: MAX_TINT, step: 0.01 },
+                  ] as const
+                ).map((c) => (
+                  <div
+                    key={c.key}
+                    className="row"
+                    style={{ gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap' }}
+                  >
+                    <span className="mono muted" style={{ width: '3.5rem', fontSize: '0.75rem' }}>
+                      {c.label}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={c.max}
+                      step={c.step}
+                      value={variation[c.key]}
+                      style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+                      onChange={(e) => setVariation({ [c.key]: Number(e.target.value) })}
+                    />
+                    <span className="mono muted" style={{ width: '2.5rem', fontSize: '0.75rem' }}>
+                      {variation[c.key].toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setVariation({ seed: (Math.random() * 2 ** 32) >>> 0 })}
                 >
-                  <span className="mono muted" style={{ width: '3.5rem', fontSize: '0.75rem' }}>
-                    {c.label}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={c.max}
-                    step={c.step}
-                    value={variation[c.key]}
-                    style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
-                    onChange={(e) => setVariation({ [c.key]: Number(e.target.value) })}
-                  />
-                  <span className="mono muted" style={{ width: '2.5rem', fontSize: '0.75rem' }}>
-                    {variation[c.key].toFixed(2)}
-                  </span>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setVariation({ seed: (Math.random() * 2 ** 32) >>> 0 })}
-              >
-                Reseed
-              </button>
-            </>
-          )}
-          <p className="muted" style={{ margin: 0, fontSize: '0.7rem' }}>
-            Continuous tiles only — tiles with an edge rhythm must match their neighbours.
-          </p>
+                  Reseed
+                </button>
+              </>
+            )}
+            <p className="muted" style={{ margin: 0, fontSize: '0.7rem' }}>
+              Continuous tiles only — tiles with an edge rhythm must match their neighbours.
+            </p>
+          </div>
         </div>
       </div>
 
-      {error && (
-        <p
-          className="error"
-          style={{
-            position: 'absolute',
-            zIndex: 3,
-            left: '0.75rem',
-            right: '0.75rem',
-            bottom: '0.75rem',
-          }}
-        >
-          {error}
-        </p>
-      )}
-
       <div className="view3d-canvas">
-        <Canvas shadows camera={{ position: [3, 3, 3], fov: 45 }} style={{ width: '100%', height: '100%' }}>
-          <color attach="background" args={['#1a1714']} />
-          {/* Lower ambient than before: a normal map only reads under directional light, and
-              0.65 ambient washed the baked relief back out. The dim opposing fill keeps the
-              side facing away from the key light from going black. */}
-          <ambientLight intensity={0.35} />
-          <directionalLight
-            position={[5, 8, 3]}
-            intensity={1.35}
-            castShadow
-            shadow-mapSize={[2048, 2048]}
-            shadow-bias={-0.0005}
-          />
-          <directionalLight position={[-4, 3, -5]} intensity={0.3} />
-          <Suspense fallback={null}>
-            <Scene3d
-              rootRef={rootRef}
-              exportRootRef={exportRootRef}
-              instance={project.instance}
-              tiles={project.tileDefinitions}
-              materials={project.materials}
-              variation={variation}
-              joint={project.joint}
-            />
-          </Suspense>
-        </Canvas>
+        <SceneCanvas
+          rootRef={rootRef}
+          exportRootRef={exportRootRef}
+          instance={project.instance}
+          tiles={project.tileDefinitions}
+          materials={project.materials}
+          variation={variation}
+          joint={project.joint}
+        />
       </div>
 
       <div className="view3d-ar-host" aria-hidden>

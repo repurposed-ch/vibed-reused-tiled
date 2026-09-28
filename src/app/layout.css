@@ -550,13 +550,6 @@ pre {
     min-height: 12rem;
   }
 
-  .view3d-overlay .row {
-    width: 100%;
-  }
-
-  .view3d-overlay .btn {
-    flex: 1 1 auto;
-  }
 }
 
 .pill {
@@ -615,37 +608,172 @@ pre {
   z-index: 0;
 }
 
-.view3d-overlay {
+/* Project page previews */
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.preview-grid .panel {
+  margin-bottom: 0;
+}
+
+.preview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.preview-card-head h2 {
+  margin: 0;
+}
+
+.preview-card-head a {
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.preview-frame {
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.preview-3d {
+  background: var(--bg0);
+  touch-action: none;
+}
+
+/* As in the 3D view: fill the frame before R3F's first measure lands. */
+.preview-3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.preview-2d {
+  display: grid;
+  place-items: center;
+  padding: 0.75rem;
+  background: #f7f3ec;
+}
+
+.preview-2d svg {
+  max-height: 100%;
+}
+
+.preview-empty {
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 3D view chrome: AR top centre, downloads bottom left, settings bottom right. */
+.view3d-ar,
+.view3d-downloads,
+.view3d-settings {
   position: absolute;
   z-index: 2;
-  left: 0;
-  right: 0;
-  top: 0;
-  display: flex;
-  flex-wrap: wrap;
+}
+
+.view3d-ar {
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
   gap: 0.5rem;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem;
-  padding-left: calc(0.75rem + env(safe-area-inset-left, 0px));
-  padding-right: calc(0.75rem + env(safe-area-inset-right, 0px));
-  background: linear-gradient(to bottom, rgba(26, 23, 20, 0.85), transparent);
-  pointer-events: none;
+  width: max-content;
+  max-width: calc(100% - 1.5rem);
 }
 
-.view3d-overlay > * {
-  pointer-events: auto;
-}
-
-.view3d-overlay h1 {
+.view3d-ar .error {
   margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: 0.8rem;
 }
 
-.view3d-overlay .row {
+.view3d-downloads {
+  left: calc(0.75rem + env(safe-area-inset-left, 0px));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 0.25rem;
+}
+
+.view3d-settings {
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
+  bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+.view3d-popover {
+  /* Native popovers live in the top layer; pin this one just above the cog. */
+  position: fixed;
+  inset: auto calc(0.75rem + env(safe-area-inset-right, 0px))
+    calc(3.75rem + env(safe-area-inset-bottom, 0px)) auto;
+  margin: 0;
+  width: min(18rem, calc(100vw - 1.5rem));
+  padding: 0.85rem;
+  background: var(--bg1);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.btn-link {
+  appearance: none;
+  display: inline-flex;
   align-items: center;
-  max-width: 100%;
+  gap: 0.35rem;
+  min-height: 36px;
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  background: color-mix(in srgb, var(--bg0) 55%, transparent);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: var(--accent);
+}
+
+.btn-icon {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg1) 85%, transparent);
+  color: var(--ink);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.btn-icon:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Beats `.page svg` / `.panel svg`, which stretch every svg to full width. */
+svg.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
 }
 
 .view3d-ar-host {
