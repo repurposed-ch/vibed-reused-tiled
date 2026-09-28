@@ -102,21 +102,23 @@ export function SolvePage() {
                 <tr>
                   <th>#</th>
                   <th>Tile</th>
-                  <th>Module</th>
-                  <th>tx / ty</th>
+                  <th>x / y</th>
+                  <th>Rotation</th>
+                  <th>Mirror</th>
                 </tr>
               </thead>
               <tbody>
                 {project.instance.placements.slice(0, 40).map((p, i) => {
                   const tile = project.tileDefinitions.find((t) => t.id === p.tileDefinitionId);
                   return (
-                    <tr key={p.id}>
+                    <tr key={i}>
                       <td>{i + 1}</td>
                       <td>{tile?.name ?? p.tileDefinitionId.slice(0, 8)}</td>
-                      <td className="mono">{p.moduleId?.slice(0, 8) ?? '—'}</td>
                       <td className="mono">
-                        {p.mat3.elements[6]!.toFixed(3)} / {p.mat3.elements[7]!.toFixed(3)}
+                        {p.position.x.toFixed(3)} / {p.position.y.toFixed(3)}
                       </td>
+                      <td className="mono">{p.rotation}°</td>
+                      <td>{p.mirror ? 'yes' : '—'}</td>
                     </tr>
                   );
                 })}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ShaderLib, Texture, Vector3, type WebGLProgramParametersWithUniforms, type WebGLRenderer } from 'three';
-import type { PlacementJson } from '@/domain/instance';
+import { placementFromMat3, type PlacementJson } from '@/domain/instance';
 import { translationMat3 } from '@/domain/mat3';
 import { createTileDefinition } from '@/domain/tile';
 import { buildTileInstances } from './tile-instances';
@@ -75,7 +75,7 @@ describe('instanced mesh', () => {
     [0, 0],
     [3, 0],
     [0, 5],
-  ].map(([x, y]) => ({ id: crypto.randomUUID(), tileDefinitionId: tile.id, mat3: translationMat3(x!, y!) }) as PlacementJson);
+  ].map(([x, y]) => placementFromMat3(tile, translationMat3(x!, y!)));
   const settings = { enabled: true, offset: 1, tint: 0.2, seed: 3 };
   const data = buildTileInstances(placements, new Map([[tile.id, tile]]), settings).get(tile.id)!;
 

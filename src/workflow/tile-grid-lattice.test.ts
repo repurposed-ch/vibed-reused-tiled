@@ -22,18 +22,17 @@ import {
 } from '@/workflow/tile-grid-lattice';
 
 function instance(
-  id: string,
   tileDefinitionId: string,
   i: number,
   j: number,
   iSpan = 1,
   jSpan = 1,
 ): TileGridInstanceJson {
-  return { id, tileDefinitionId, i, j, iSpan, jSpan, rotated: false };
+  return { tileDefinitionId, i, j, iSpan, jSpan, rotated: false };
 }
 
-function unitRow(prefix: string, cells: Array<[number, number]>): TileGridInstanceJson[] {
-  return cells.map(([i, j], n) => instance(`${prefix}${n}`, 'b', i, j));
+function unitRow(tileDefinitionId: string, cells: Array<[number, number]>): TileGridInstanceJson[] {
+  return cells.map(([i, j]) => instance(tileDefinitionId, i, j));
 }
 
 function grid(extent: { iCount: number; jCount: number }, instances: TileGridInstanceJson[]): TileGridJson {
@@ -54,7 +53,7 @@ function grid(extent: { iCount: number; jCount: number }, instances: TileGridIns
  * a a a b   — a is 3× b, one a and seven b in a 4×4 repeat.
  */
 const gridA3 = grid({ iCount: 4, jCount: 4 }, [
-  instance('a0', 'a', 0, 0, 3, 3),
+  instance('a', 0, 0, 3, 3),
   ...unitRow('b', [
     [3, 0],
     [3, 1],
@@ -72,7 +71,7 @@ const gridA3 = grid({ iCount: 4, jCount: 4 }, [
  * a a   — a is 2× b, one a and two b in a 2×3 repeat.
  */
 const gridA2 = grid({ iCount: 2, jCount: 3 }, [
-  instance('a0', 'a', 0, 0, 2, 2),
+  instance('a', 0, 0, 2, 2),
   ...unitRow('b', [
     [0, 2],
     [1, 2],
@@ -90,8 +89,8 @@ const gridA2 = grid({ iCount: 2, jCount: 3 }, [
  * The blanks belong to neighbouring copies; the repeat is a sheared lattice.
  */
 const gridStaircase = grid({ iCount: 4, jCount: 7 }, [
-  instance('a0', 'a', 0, 0, 3, 3),
-  instance('a1', 'a', 0, 3, 3, 3),
+  instance('a', 0, 0, 3, 3),
+  instance('a', 0, 3, 3, 3),
   ...unitRow('b', [
     [3, 3],
     [3, 4],
@@ -472,10 +471,10 @@ describe('mirrorAllowed', () => {
     // u=(2,0), v=(0,2) is orthogonal and tiles, but only claims 4 of the 16
     // cells in a 4×4 extent — so reflecting inside that extent still moves them.
     const sparse = grid({ iCount: 4, jCount: 4 }, [
-      instance('b0', 'b', 0, 0),
-      instance('b1', 'b', 1, 0),
-      instance('b2', 'b', 0, 1),
-      instance('b3', 'b', 1, 1),
+      instance('b', 0, 0),
+      instance('b', 1, 0),
+      instance('b', 0, 1),
+      instance('b', 1, 1),
     ]);
     const cells = tileGridCells(sparse);
     expect(validateLattice(cells, { i: 2, j: 0 }, { i: 0, j: 2 }).ok).toBe(true);

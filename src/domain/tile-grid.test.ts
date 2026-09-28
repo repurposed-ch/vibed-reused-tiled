@@ -27,15 +27,12 @@ import { resolveSchema } from '@/workflow/tile-grid-lattice';
 
 const CELL = 0.15;
 
-function instance(
-  id: string,
-  tileDefinitionId: string,
-  i: number,
-  j: number,
-  span = 1,
-): TileGridInstanceJson {
-  return { id, tileDefinitionId, i, j, iSpan: span, jSpan: span, rotated: false };
+function instance(tileDefinitionId: string, i: number, j: number, span = 1): TileGridInstanceJson {
+  return { tileDefinitionId, i, j, iSpan: span, jSpan: span, rotated: false };
 }
+
+/** The 3×3 `a` at the origin of `gridA3`. */
+const isA0 = (i: TileGridInstanceJson) => i.tileDefinitionId === 'a' && i.i === 0 && i.j === 0;
 
 /** The 4×4 repeat: one 3×3 a, seven unit b. */
 function gridA3(): TileGridJson {
@@ -45,14 +42,14 @@ function gridA3(): TileGridJson {
     cell: { x: CELL, y: CELL },
     extent: { iCount: 4, jCount: 4 },
     instances: [
-      instance('a0', 'a', 0, 0, 3),
-      instance('b0', 'b', 3, 0),
-      instance('b1', 'b', 3, 1),
-      instance('b2', 'b', 3, 2),
-      instance('b3', 'b', 0, 3),
-      instance('b4', 'b', 1, 3),
-      instance('b5', 'b', 2, 3),
-      instance('b6', 'b', 3, 3),
+      instance('a', 0, 0, 3),
+      instance('b', 3, 0),
+      instance('b', 3, 1),
+      instance('b', 3, 2),
+      instance('b', 0, 3),
+      instance('b', 1, 3),
+      instance('b', 2, 3),
+      instance('b', 3, 3),
     ],
     fallbackTileDefinitionId: 'b',
   });
@@ -122,30 +119,31 @@ describe('spanFor', () => {
 describe('instance editing', () => {
   it('finds the occurrence covering any cell of a large format', () => {
     const grid = gridA3();
-    expect(instanceAtCell(grid, 2, 2)?.id).toBe('a0');
-    expect(instanceAtCell(grid, 0, 0)?.id).toBe('a0');
-    expect(instanceAtCell(grid, 3, 0)?.id).toBe('b0');
+    const a0 = grid.instances.find(isA0);
+    expect(instanceAtCell(grid, 2, 2)).toBe(a0);
+    expect(instanceAtCell(grid, 0, 0)).toBe(a0);
+    expect(instanceAtCell(grid, 3, 0)).toMatchObject({ tileDefinitionId: 'b', i: 3, j: 0 });
     expect(instanceAtCell(grid, 9, 9)).toBeUndefined();
   });
 
   it('removes a whole occurrence when any of its cells is clicked', () => {
     const grid = removeInstanceAt(gridA3(), 1, 1);
-    expect(grid.instances.some((i) => i.id === 'a0')).toBe(false);
+    expect(grid.instances.some(isA0)).toBe(false);
     expect(grid.instances).toHaveLength(7);
   });
 
   it('clears everything a new footprint lands on, whole', () => {
     // A 2×2 at the origin overlaps the 3×3 a and nothing else.
-    const result = putInstance(gridA3(), instance('new', 'b', 0, 0, 2));
+    const result = putInstance(gridA3(), instance('b', 0, 0, 2));
     expect(result.replaced).toBe(1);
-    expect(result.grid.instances.some((i) => i.id === 'a0')).toBe(false);
+    expect(result.grid.instances.some(isA0)).toBe(false);
     expect(result.grid.instances.filter((i) => i.tileDefinitionId === 'b')).toHaveLength(8);
   });
 
   it('leaves disjoint occurrences alone', () => {
     const result = putInstance(gridA3(), createTileGridInstance('b', 3, 0));
     expect(result.replaced).toBe(1); // only the unit b already at (3,0)
-    expect(result.grid.instances.some((i) => i.id === 'a0')).toBe(true);
+    expect(result.grid.instances.some(isA0)).toBe(true);
   });
 });
 
@@ -167,7 +165,7 @@ describe('cover diagnostics', () => {
     const grid = gridA3();
     const doubled: TileGridJson = {
       ...grid,
-      instances: [...grid.instances, instance('dup', 'b', 0, 0)],
+      instances: [...grid.instances, instance('b', 0, 0)],
     };
     expect(overclaimedCells(doubled)).toEqual([{ i: 0, j: 0 }]);
   });
@@ -176,7 +174,7 @@ describe('cover diagnostics', () => {
     const grid = gridA3();
     const spilling: TileGridJson = {
       ...grid,
-      instances: [...grid.instances, instance('out', 'b', 5, 5)],
+      instances: [...grid.instances, instance('b', 5, 5)],
     };
     expect(overclaimedCells(spilling)).toContainEqual({ i: 5, j: 5 });
   });

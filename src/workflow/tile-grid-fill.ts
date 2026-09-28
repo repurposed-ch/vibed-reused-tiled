@@ -1,5 +1,5 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
-import type { InstanceGridJson, PlacementJson } from '@/domain/instance';
+import { placementFromMat3, type InstanceGridJson, type PlacementJson } from '@/domain/instance';
 import {
   multiplyMat3,
   rotationMat3,
@@ -348,7 +348,6 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     rotated: boolean,
     flip: Mirror,
     span: { iSpan: number; jSpan: number },
-    moduleId?: string,
   ): 'placed' | 'missing' | 'oversized' => {
     const tile = tiles.get(tileId);
     if (!tile) return 'missing';
@@ -370,13 +369,9 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
         orientationMat3(tile, rotated, flip),
       ),
     );
-    placements.push({
-      id: crypto.randomUUID(),
-      tileDefinitionId: tileId,
-      mat3,
-      moduleId,
-      cell: { i: cell.i, j: cell.j, iSpan: span.iSpan, jSpan: span.jSpan },
-    });
+    placements.push(
+      placementFromMat3(tile, mat3, { i: cell.i, j: cell.j, iSpan: span.iSpan, jSpan: span.jSpan }),
+    );
     (byTile[tileId] ??= []).push(mat3);
     used.set(tileId, (used.get(tileId) ?? 0) + 1);
     return 'placed';
@@ -420,7 +415,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
     oversized[tileId] = (oversized[tileId] ?? 0) + 1;
   };
 
-  for (const [key, occurrence] of occurrences) {
+  for (const occurrence of occurrences.values()) {
     const area = occurrence.iSpan * occurrence.jSpan;
 
     if (area === 1) {
@@ -432,7 +427,6 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
         occurrence.rotated,
         occurrence.flip,
         { iSpan: 1, jSpan: 1 },
-        key,
       );
       if (outcome === 'placed') {
         if (occurrence.containedCount === 0) cutTiles += 1;
@@ -453,7 +447,6 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
           occurrence.rotated,
           occurrence.flip,
           { iSpan: occurrence.iSpan, jSpan: occurrence.jSpan },
-          key,
         );
         if (outcome === 'placed') {
           wholeTiles += 1;
@@ -470,7 +463,7 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
       continue;
     }
     for (const cell of occurrence.touched) {
-      if (emit(fallbackId, cell, false, { x: false, y: false }, { iSpan: 1, jSpan: 1 }, key) === 'placed')
+      if (emit(fallbackId, cell, false, { x: false, y: false }, { iSpan: 1, jSpan: 1 }) === 'placed')
         fallbackTiles += 1;
     }
   }

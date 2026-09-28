@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
+import type { PlacementJson } from '@/domain/instance';
 import { transformPointMat3, type Mat3Json } from '@/domain/mat3';
+import { poseToMat3 } from '@/domain/pose';
 import { createTileDefinition, type TileDefinitionJson } from '@/domain/tile';
 import {
   createMasterGrid,
@@ -32,9 +34,12 @@ const tileA: TileDefinitionJson = createTileDefinition({
   width: CELL * 3,
 });
 const tiles = [tileA, tileB];
+const tileById = new Map(tiles.map((t) => [t.id, t]));
+
+/** A placement's tile-local → world matrix. */
+const matOf = (p: PlacementJson): Mat3Json => poseToMat3(p, tileById.get(p.tileDefinitionId)!);
 
 function instance(
-  id: string,
   tileDefinitionId: string,
   i: number,
   j: number,
@@ -42,7 +47,7 @@ function instance(
   jSpan = 1,
   rotated = false,
 ): TileGridInstanceJson {
-  return { id, tileDefinitionId, i, j, iSpan, jSpan, rotated };
+  return { tileDefinitionId, i, j, iSpan, jSpan, rotated };
 }
 
 /**
@@ -57,14 +62,14 @@ const gridA3 = createTileGrid({
   cell: { x: CELL, y: CELL },
   extent: { iCount: 4, jCount: 4 },
   instances: [
-    instance('a0', 'a', 0, 0, 3, 3),
-    instance('b0', 'b', 3, 0),
-    instance('b1', 'b', 3, 1),
-    instance('b2', 'b', 3, 2),
-    instance('b3', 'b', 0, 3),
-    instance('b4', 'b', 1, 3),
-    instance('b5', 'b', 2, 3),
-    instance('b6', 'b', 3, 3),
+    instance('a', 0, 0, 3, 3),
+    instance('b', 3, 0),
+    instance('b', 3, 1),
+    instance('b', 3, 2),
+    instance('b', 0, 3),
+    instance('b', 1, 3),
+    instance('b', 2, 3),
+    instance('b', 3, 3),
   ],
   fallbackTileDefinitionId: 'b',
 });
@@ -147,7 +152,7 @@ function coverage(result: ReturnType<typeof fillPolygonWithTileSchema>) {
   const seen = new Map<string, number>();
   for (const placement of result.placements) {
     const tile = map.get(placement.tileDefinitionId)!;
-    for (const key of coveredCells(placement.mat3, tile)) {
+    for (const key of coveredCells(matOf(placement), tile)) {
       seen.set(key, (seen.get(key) ?? 0) + 1);
     }
   }
@@ -234,7 +239,7 @@ describe('fillPolygonWithTileSchema', () => {
 
     // Cut tiles overrun the edge rather than leaving the polygon short.
     const maxX = Math.max(
-      ...result.placements.map((p) => transformPointMat3(p.mat3, CELL, CELL).x),
+      ...result.placements.map((p) => transformPointMat3(matOf(p), CELL, CELL).x),
     );
     expect(maxX).toBeGreaterThan(0.5);
   });
@@ -298,18 +303,15 @@ describe('fillPolygonWithTileSchema', () => {
     expect(origin.y).toBeCloseTo(2, 9);
   });
 
-  it('bakes mirroring into the placement matrix', () => {
+  it('records mirroring on the placement', () => {
     const result = fillPolygonWithTileSchema({
       schema: schemaFor({ mirror: { x: 'alternate', y: 'none' } }),
       tiles,
       boundaries: rectBoundary(1.2, 0.6),
     });
 
-    // A mirrored placement has a negative determinant; an unmirrored one does not.
-    const determinant = (m: Mat3Json) => m.elements[0]! * m.elements[4]! - m.elements[1]! * m.elements[3]!;
-    const dets = result.placements.map((p) => determinant(p.mat3));
-    expect(dets.some((d) => d < 0)).toBe(true);
-    expect(dets.some((d) => d > 0)).toBe(true);
+    expect(result.placements.some((p) => p.mirror)).toBe(true);
+    expect(result.placements.some((p) => !p.mirror)).toBe(true);
 
     // Mirroring flips geometry in place, so coverage is unchanged.
     const { cells, doubled } = coverage(result);
@@ -333,9 +335,9 @@ describe('fillPolygonWithTileSchema', () => {
       joint,
       extent: { iCount: 2, jCount: 2 },
       instances: [
-        instance('g0', 'g', 0, 0, 2, 1),
-        instance('s0', 's', 0, 1),
-        instance('s1', 's', 1, 1),
+        instance('g', 0, 0, 2, 1),
+        instance('s', 0, 1),
+        instance('s', 1, 1),
       ],
       fallbackTileDefinitionId: 's',
     });
@@ -414,7 +416,7 @@ describe('fillPolygonWithTileSchema', () => {
       name: 'Big only',
       cell: { x: CELL, y: CELL },
       extent: { iCount: 3, jCount: 3 },
-      instances: [instance('a0', 'a', 0, 0, 3, 3)],
+      instances: [instance('a', 0, 0, 3, 3)],
       fallbackTileDefinitionId: 'a',
     });
     const master = createMasterGrid({
@@ -533,7 +535,7 @@ describe('boundary region', () => {
     const result = fillPolygonWithTileSchema({ schema: schemaFor(), tiles, boundaries });
 
     expect(result.stats.cells).toBe(64);
-    const maxX = Math.max(...result.placements.map((p) => transformPointMat3(p.mat3, 0, 0).x));
+    const maxX = Math.max(...result.placements.map((p) => transformPointMat3(matOf(p), 0, 0).x));
     expect(maxX).toBeLessThan(1.2);
   });
 
@@ -576,10 +578,10 @@ describe('boundary region', () => {
     const boxes = result.placements.map((p) => {
       const t = map.get(p.tileDefinitionId)!;
       const corners = [
-        transformPointMat3(p.mat3, 0, 0),
-        transformPointMat3(p.mat3, t.length, 0),
-        transformPointMat3(p.mat3, t.length, t.width),
-        transformPointMat3(p.mat3, 0, t.width),
+        transformPointMat3(matOf(p), 0, 0),
+        transformPointMat3(matOf(p), t.length, 0),
+        transformPointMat3(matOf(p), t.length, t.width),
+        transformPointMat3(matOf(p), 0, t.width),
       ];
       return {
         minX: Math.min(...corners.map((c) => c.x)),

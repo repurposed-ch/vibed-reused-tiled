@@ -9,7 +9,7 @@ import {
   type InstancedMesh,
   type Material,
 } from 'three';
-import type { PlacementJson } from '@/domain/instance';
+import { placementFromMat3, type PlacementJson } from '@/domain/instance';
 import { multiplyMat3, scaleMat3, translationMat3 } from '@/domain/mat3';
 import { createTileDefinition } from '@/domain/tile';
 import {
@@ -40,7 +40,7 @@ function scene(settings: TileVariationSettings) {
     const at = translationMat3((i % 4) * 0.6, Math.floor(i / 4) * 0.3);
     // Every third tile is mirrored, so the expansion must carry the mirror into the UVs.
     const mat3 = i % 3 === 0 ? multiplyMat3(at, multiplyMat3(translationMat3(0.6, 0), scaleMat3(-1, 1))) : at;
-    placements.push({ id: crypto.randomUUID(), tileDefinitionId: tile.id, mat3 } as PlacementJson);
+    placements.push(placementFromMat3(tile, mat3));
   }
   const data = buildTileInstances(placements, new Map([[tile.id, tile]]), settings).get(tile.id)!;
 

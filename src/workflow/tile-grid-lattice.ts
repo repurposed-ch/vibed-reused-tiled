@@ -322,10 +322,10 @@ function expandMaster(
       const localCopy = applyMirror(copy, blockExtent, flip);
       const copyFlip = xorMirror(flip, mirrorParity(master.mirror, localCopy));
       const offset = applyBasis(basis, localCopy);
-      for (const instance of childTileGrid.instances) {
+      for (const [index, instance] of childTileGrid.instances.entries()) {
         const placed = mirrorInstance(instance, childTileGrid.extent, copyFlip);
         const originCell: IntVec2 = { i: offset.i + placed.i, j: offset.j + placed.j };
-        const instanceKey = `${keyPrefix}/${localCopy.i},${localCopy.j}/${instance.id}`;
+        const instanceKey = `${keyPrefix}/${localCopy.i},${localCopy.j}/#${index}`;
         for (const cell of instanceCells(placed)) {
           cells.push({
             cell: { i: offset.i + cell.i, j: offset.j + cell.j },

@@ -1,16 +1,16 @@
 import { z } from 'zod';
-import { identityMat3, Mat3JsonSchema, translationMat3 } from './mat3';
+import { identityMat3, translationMat3 } from './mat3';
+import { createPose, PointJsonSchema, PoseJsonSchema, type PointJson } from './pose';
 
-export const ModulePlacementJsonSchema = z.object({
-  id: z.string().min(1),
+/** One tile of a module, posed in module-local space (see `PoseJsonSchema`). */
+export const ModulePlacementJsonSchema = PoseJsonSchema.extend({
   tileDefinitionId: z.string().min(1),
-  localMat3: Mat3JsonSchema,
-  role: z.string().optional(),
 });
 
 export const ModuleRepeatJsonSchema = z.object({
   count: z.number().int().positive(),
-  offsetMat3: Mat3JsonSchema,
+  /** Shift between successive copies of the module. */
+  offset: PointJsonSchema,
 });
 
 export const DesignModuleJsonSchema = z.object({
@@ -18,14 +18,6 @@ export const DesignModuleJsonSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   placements: z.array(ModulePlacementJsonSchema),
-  children: z
-    .array(
-      z.object({
-        moduleId: z.string().min(1),
-        localMat3: Mat3JsonSchema,
-      }),
-    )
-    .optional(),
   repeat: ModuleRepeatJsonSchema.optional(),
   anchor: z.enum(['origin', 'centroid', 'bboxMin']).optional(),
 });
@@ -93,16 +85,14 @@ export function createEmptyDesignFamily(): DesignFamilyJson {
   };
 }
 
+/** A module placement with its tile centred on `position`. */
 export function createModulePlacement(
   tileDefinitionId: string,
-  x = 0,
-  y = 0,
+  position: PointJson,
+  rotation = 0,
+  mirror = false,
 ): ModulePlacementJson {
-  return {
-    id: crypto.randomUUID(),
-    tileDefinitionId,
-    localMat3: translationMat3(x, y),
-  };
+  return { tileDefinitionId, ...createPose(position, rotation, mirror) };
 }
 
 export { identityMat3, translationMat3 };

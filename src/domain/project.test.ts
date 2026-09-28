@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createDefaultProject,
   parseTilingProject,
+  poseAabb,
+  poseToMat3,
+  translationMat3,
   projectFromJsonString,
   projectToJsonString,
   TileDefinitionJsonSchema,
@@ -13,10 +16,10 @@ import { findRapportModule, rapportToTileSchema } from '@/workflow/rapport';
 import { resolveSchema } from '@/workflow/tile-grid-lattice';
 
 describe('project schema', () => {
-  it('round-trips the default project at schemaVersion 4', () => {
+  it('round-trips the default project at schemaVersion 5', () => {
     const project = createDefaultProject();
     const again = parseTilingProject(JSON.parse(JSON.stringify(project)) as unknown);
-    expect(again.schemaVersion).toBe(4);
+    expect(again.schemaVersion).toBe(5);
     expect(again.materials.length).toBeGreaterThan(0);
     expect(again.materials[0]).not.toHaveProperty('periodMeters');
     expect(again.tileDefinitions[0]?.materialId).toBeTruthy();
@@ -73,7 +76,7 @@ describe('project schema', () => {
       },
     };
     const migrated = parseTilingProject(legacy);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
     expect(migrated.materials.some((m) => m.name === 'terracotta')).toBe(true);
     expect(migrated.tileDefinitions[0]?.color).toEqual({
       mode: 'brightness',
@@ -110,7 +113,7 @@ describe('project schema', () => {
       ],
     };
     const migrated = parseTilingProject(v2);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
     expect(migrated.materials[0]).not.toHaveProperty('periodMeters');
     expect(migrated.tileDefinitions[0]?.color).toEqual({
       mode: 'palette',
@@ -239,7 +242,7 @@ describe('tile schema persistence', () => {
   it('migrates a v3 project forward and leaves it without a tile schema', () => {
     const v3 = { ...createDefaultProject(), schemaVersion: 3, tileSchema: undefined };
     const migrated = parseTilingProject(JSON.parse(JSON.stringify(v3)) as unknown);
-    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.schemaVersion).toBe(5);
     expect(migrated.tileSchema).toBeUndefined();
   });
 
@@ -301,5 +304,92 @@ describe('tile schema persistence', () => {
     // Every placement names a tile the project actually defines.
     const ids = new Set(project.tileDefinitions.map((t) => t.id));
     expect(instance.placements.every((p) => ids.has(p.tileDefinitionId))).toBe(true);
+  });
+});
+
+describe('v4 → v5 placement poses', () => {
+  /** The default project, solved, written back out the way v4 stored it. */
+  function v4Project() {
+    const project = createDefaultProject();
+    const instance = solveLayout({
+      tileDefinitions: project.tileDefinitions,
+      designFamily: project.designFamily,
+      boundaries: project.boundaries,
+      sampledStock: sampleStock(project.stock, mulberry32(7)),
+      seed: 7,
+      tileSchema: project.tileSchema,
+    });
+    const tiles = new Map(project.tileDefinitions.map((t) => [t.id, t]));
+    const module = project.designFamily.modules[0]!;
+    const legacy = {
+      ...project,
+      schemaVersion: 4,
+      instance: {
+        ...instance,
+        placements: instance.placements.map(({ position, rotation, mirror, ...rest }, n) => ({
+          ...rest,
+          id: `p${n}`,
+          moduleId: 'm',
+          mat3: poseToMat3({ position, rotation, mirror }, tiles.get(rest.tileDefinitionId)!),
+        })),
+      },
+      designFamily: {
+        ...project.designFamily,
+        modules: [
+          {
+            ...module,
+            placements: module.placements.map(({ position, rotation, mirror, ...rest }, n) => ({
+              ...rest,
+              id: `mp${n}`,
+              role: 'x',
+              localMat3: poseToMat3({ position, rotation, mirror }, tiles.get(rest.tileDefinitionId)!),
+            })),
+            repeat: { count: 3, offsetMat3: translationMat3(module.repeat!.offset.x, module.repeat!.offset.y) },
+          },
+        ],
+      },
+    };
+    return { project: { ...project, instance }, legacy, tiles };
+  }
+
+  it('turns matrices into poses with the same footprint, and drops the ids', () => {
+    const { project, legacy, tiles } = v4Project();
+    const migrated = parseTilingProject(JSON.parse(JSON.stringify(legacy)) as unknown);
+
+    expect(migrated.schemaVersion).toBe(5);
+    const before = project.instance.placements;
+    const after = migrated.instance!.placements;
+    expect(after).toHaveLength(before.length);
+    after.forEach((p, i) => {
+      const tile = tiles.get(p.tileDefinitionId)!;
+      const a = poseAabb(p, tile);
+      const b = poseAabb(before[i]!, tile);
+      expect(a.minX).toBeCloseTo(b.minX, 9);
+      expect(a.minY).toBeCloseTo(b.minY, 9);
+      expect(a.maxX).toBeCloseTo(b.maxX, 9);
+      expect(a.maxY).toBeCloseTo(b.maxY, 9);
+      expect(p.mirror).toBe(before[i]!.mirror);
+      expect(p).not.toHaveProperty('id');
+      expect(p).not.toHaveProperty('mat3');
+      expect(p).not.toHaveProperty('moduleId');
+    });
+
+    const module = migrated.designFamily.modules[0]!;
+    expect(module.repeat?.offset).toEqual(project.designFamily.modules[0]!.repeat!.offset);
+    for (const [i, pl] of module.placements.entries()) {
+      expect(pl).not.toHaveProperty('id');
+      expect(pl).not.toHaveProperty('localMat3');
+      expect(pl.position.x).toBeCloseTo(project.designFamily.modules[0]!.placements[i]!.position.x, 12);
+    }
+    for (const instance of migrated.tileSchema!.tileGrids[0]!.instances) {
+      expect(instance).not.toHaveProperty('id');
+    }
+  });
+
+  it('is a no-op on a second pass', () => {
+    const { legacy } = v4Project();
+    const once = parseTilingProject(JSON.parse(JSON.stringify(legacy)) as unknown);
+    const twice = parseTilingProject(JSON.parse(JSON.stringify(once)) as unknown);
+    expect(twice).toEqual(once);
   });
 });

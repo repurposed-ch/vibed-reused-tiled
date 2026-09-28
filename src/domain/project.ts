@@ -9,7 +9,8 @@ import { DesignInstanceJsonSchema } from './instance';
 import { DEFAULT_JOINT_COLOR, defaultJoint, GROUT_MATERIAL_ID, ProjectJointJsonSchema } from './joint';
 import { MaterialDefinitionJsonSchema, createMaterialDefinition } from './material';
 import { defaultMaterials, groutMaterial, materialIdForLabel } from './material-presets';
-import { translationMat3 } from './mat3';
+import { coerceMat3Json, Mat3JsonSchema } from './mat3';
+import { mat3ToPose } from './pose';
 import { StockStateJsonSchema } from './stock';
 import {
   createTileDefinition,
@@ -27,7 +28,7 @@ import {
 
 export const TilingProjectJsonSchema = z.object({
   type: z.literal('TilingProject'),
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(5),
   meta: z
     .object({
       name: z.string().optional(),
@@ -191,18 +192,99 @@ function migrateJoint(
   return { joint, materials };
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * A v4 placement — `{ id, tileDefinitionId, <matrixKey>: Mat3 }` — as a pose. Entries already
+ * posed pass through untouched, which keeps this idempotent. Returns null when the placement
+ * cannot be posed: an unknown tile or an unreadable matrix.
+ */
+function poseLegacyPlacement(
+  entry: unknown,
+  matrixKey: 'mat3' | 'localMat3',
+  sizes: ReadonlyMap<string, { length: number; width: number }>,
+): UnknownRecord | null {
+  if (!isRecord(entry)) return null;
+  if (isRecord(entry.position)) return entry;
+  const matrix = Mat3JsonSchema.safeParse(coerceMat3Json(entry[matrixKey]));
+  const size =
+    typeof entry.tileDefinitionId === 'string' ? sizes.get(entry.tileDefinitionId) : undefined;
+  if (!matrix.success || !size) return null;
+  const { [matrixKey]: _matrix, ...rest } = entry;
+  return { ...rest, ...mat3ToPose(matrix.data, size) };
+}
+
+/**
+ * v4 → v5: solved and module placements move from a matrix to a pose (see `PoseJsonSchema`),
+ * and a module repeat from `offsetMat3` to a plain `offset`. Ids are not removed here; zod
+ * strips the keys it no longer knows. Runs on every parse, so it must be idempotent.
+ */
+function migratePoses(
+  root: UnknownRecord,
+  tileDefinitions: unknown,
+): Pick<UnknownRecord, 'designFamily' | 'instance'> {
+  const sizes = new Map<string, { length: number; width: number }>();
+  if (Array.isArray(tileDefinitions)) {
+    for (const t of tileDefinitions) {
+      if (!isRecord(t) || typeof t.id !== 'string') continue;
+      if (typeof t.length === 'number' && typeof t.width === 'number') {
+        sizes.set(t.id, { length: t.length, width: t.width });
+      }
+    }
+  }
+
+  const posed = (list: unknown, key: 'mat3' | 'localMat3') =>
+    Array.isArray(list)
+      ? list
+          .map((p) => poseLegacyPlacement(p, key, sizes))
+          .filter((p): p is UnknownRecord => p !== null)
+      : list;
+
+  let instance = root.instance;
+  if (isRecord(instance)) {
+    instance = { ...instance, placements: posed(instance.placements, 'mat3') };
+  }
+
+  let designFamily = root.designFamily;
+  if (isRecord(designFamily) && Array.isArray(designFamily.modules)) {
+    designFamily = {
+      ...designFamily,
+      modules: designFamily.modules.map((module) => {
+        if (!isRecord(module)) return module;
+        let repeat = module.repeat;
+        if (isRecord(repeat) && !isRecord(repeat.offset)) {
+          const offset = Mat3JsonSchema.safeParse(coerceMat3Json(repeat.offsetMat3));
+          // Offsets were always pure translations; keep only that column.
+          const x = offset.success ? offset.data.elements[6] : 0;
+          const y = offset.success ? offset.data.elements[7] : 0;
+          const { offsetMat3: _offsetMat3, ...rest } = repeat;
+          repeat = { ...rest, offset: { x, y } };
+        }
+        return { ...module, placements: posed(module.placements, 'localMat3'), repeat };
+      }),
+    };
+  }
+
+  return { designFamily, instance };
+}
+
 function migrateProject(data: unknown): unknown {
   if (typeof data !== 'object' || data === null) return data;
   const root = data as Record<string, unknown>;
   const version = root.schemaVersion;
 
-  if ((version === 3 || version === 4) && Array.isArray(root.materials)) {
-    // v3 and v4 differ only by the optional tileSchema, so one branch normalises
-    // both: strip deprecated periodMeters and stamp the current version.
+  if ((version === 3 || version === 4 || version === 5) && Array.isArray(root.materials)) {
+    // v3 → v4 added only the optional tileSchema and v4 → v5 only re-encodes placements, so
+    // one branch normalises all three: strip deprecated periodMeters, pose placements and
+    // stamp the current version.
     const withJoint = migrateJoint(root, migrateMaterials(root));
     return {
       ...root,
-      schemaVersion: 4,
+      schemaVersion: 5,
       materials: withJoint.materials,
       joint: withJoint.joint,
       tileDefinitions: Array.isArray(root.tileDefinitions)
@@ -212,10 +294,11 @@ function migrateProject(data: unknown): unknown {
             colors: undefined,
           }))
         : root.tileDefinitions,
+      ...migratePoses(root, root.tileDefinitions),
     };
   }
 
-  // v1 / v2 → v3
+  // v1 / v2 → v5
   const presets = defaultMaterials();
   const legacyTiles = Array.isArray(root.tileDefinitions)
     ? (root.tileDefinitions as LegacyTile[])
@@ -271,10 +354,11 @@ function migrateProject(data: unknown): unknown {
   return {
     ...root,
     type: 'TilingProject',
-    schemaVersion: 4,
+    schemaVersion: 5,
     materials: withJoint.materials,
     joint: withJoint.joint,
     tileDefinitions,
+    ...migratePoses(root, tileDefinitions),
   };
 }
 
@@ -390,7 +474,7 @@ export function createDefaultProject(): TilingProjectJson {
 
   return {
     type: 'TilingProject',
-    schemaVersion: 4,
+    schemaVersion: 5,
     meta: {
       name: 'Untitled tiling',
       updatedAt: new Date().toISOString(),
@@ -418,12 +502,15 @@ export function createDefaultProject(): TilingProjectJson {
       const module = family.modules[0]!;
       const gap = 0.005;
       module.placements = [
-        createModulePlacement(square600.id, 0, 0),
-        createModulePlacement(square200.id, square600.length + gap, 0),
+        createModulePlacement(square600.id, { x: square600.length / 2, y: square600.width / 2 }),
+        createModulePlacement(square200.id, {
+          x: square600.length + gap + square200.length / 2,
+          y: square200.width / 2,
+        }),
       ];
       module.repeat = {
         count: 3,
-        offsetMat3: translationMat3(square600.length + square200.length + 2 * gap, 0),
+        offset: { x: square600.length + square200.length + 2 * gap, y: 0 },
       };
       return family;
     })(),
@@ -469,6 +556,7 @@ export * from './joint';
 export * from './material';
 export * from './material-presets';
 export * from './mat3';
+export * from './pose';
 export * from './stock';
 export * from './tile';
 export * from './tile-grid';

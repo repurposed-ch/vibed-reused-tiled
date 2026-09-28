@@ -1,7 +1,8 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
 import type { DesignFamilyJson, DesignModuleJson } from '@/domain/design-family';
 import type { DesignInstanceJson, PlacementJson } from '@/domain/instance';
-import { identityMat3, multiplyMat3, placementAabb, translationMat3, type Mat3Json } from '@/domain/mat3';
+import { identityMat3 } from '@/domain/mat3';
+import { createPose, poseAabb, type PointJson } from '@/domain/pose';
 import type { TileDefinitionJson } from '@/domain/tile';
 import type { TileSchemaJson } from '@/domain/tile-grid';
 import type { SampledStock } from './sample-stock';
@@ -48,7 +49,7 @@ function outerAabb(boundaries: BoundaryConditionsJson): Rect {
 
 function expandModule(
   module: DesignModuleJson,
-  world: Mat3Json,
+  world: PointJson,
   tiles: Map<string, TileDefinitionJson>,
   remaining: Map<string, number>,
 ): PlacementJson[] {
@@ -60,32 +61,30 @@ function expandModule(
       const left = remaining.get(pl.tileDefinitionId) ?? 0;
       if (left <= 0) continue;
       if (!tiles.has(pl.tileDefinitionId)) continue;
+      // Module space only translates into world space, so rotation and mirror carry over as-is.
       out.push({
-        id: crypto.randomUUID(),
-        tileDefinitionId: pl.tileDefinitionId,
-        mat3: multiplyMat3(cursor, pl.localMat3),
-        moduleId: module.id,
+        ...pl,
+        position: { x: cursor.x + pl.position.x, y: cursor.y + pl.position.y },
       });
       remaining.set(pl.tileDefinitionId, left - 1);
     }
     if (module.repeat && r < repeats - 1) {
-      cursor = multiplyMat3(cursor, module.repeat.offsetMat3);
+      const { offset } = module.repeat;
+      cursor = { x: cursor.x + offset.x, y: cursor.y + offset.y };
     }
   }
   return out;
 }
 
 /**
- * World footprint of a placement. Taken from the transformed corners rather than
- * from the translation column plus `length`/`width`: a rotated or mirrored
- * placement occupies a different rectangle, and reading the raw translation would
- * make every overlap and bounds test below wrong for it.
+ * World footprint of a placement, from its transformed corners: a rotated
+ * placement occupies a different rectangle than its unrotated size suggests.
  */
 function placementFootprint(
   placement: PlacementJson,
   tile: TileDefinitionJson,
 ): Rect {
-  const aabb = placementAabb(placement.mat3, tile);
+  const aabb = poseAabb(placement, tile);
   return {
     x: aabb.minX,
     y: aabb.minY,
@@ -188,16 +187,16 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
     const module = input.designFamily.modules.find((m) => m.id === moduleId);
     if (!module || module.placements.length === 0) continue;
 
-    const moduleW = module.placements.reduce((w, pl) => {
+    // Extent from each tile's rotated footprint, so a turned tile counts along the right axis.
+    let moduleW = 0;
+    let moduleH = 0;
+    for (const pl of module.placements) {
       const t = tiles.get(pl.tileDefinitionId);
-      const x = (pl.localMat3.elements[6] ?? 0) + (t?.length ?? 0);
-      return Math.max(w, x);
-    }, 0);
-    const moduleH = module.placements.reduce((h, pl) => {
-      const t = tiles.get(pl.tileDefinitionId);
-      const y = (pl.localMat3.elements[7] ?? 0) + (t?.width ?? 0);
-      return Math.max(h, y);
-    }, 0);
+      if (!t) continue;
+      const box = poseAabb(pl, t);
+      moduleW = Math.max(moduleW, box.maxX);
+      moduleH = Math.max(moduleH, box.maxY);
+    }
 
     const repeats = module.repeat?.count ?? 1;
     for (let r = 0; r < repeats; r += 1) {
@@ -208,7 +207,7 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
       }
       if (cursorY + moduleH > bounds.y + bounds.h + 1e-6) break;
 
-      const world = translationMat3(cursorX, cursorY);
+      const world = { x: cursorX, y: cursorY };
       const added = expandModule(module, world, tiles, remaining);
       if (!added.length) break;
       placements.push(...added);
@@ -239,9 +238,8 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
       for (let y = bounds.y; y + tile.width <= bounds.y + bounds.h + 1e-9; y += step) {
         for (let x = bounds.x; x + tile.length <= bounds.x + bounds.w + 1e-9; x += step) {
           const candidate: PlacementJson = {
-            id: 'tmp',
             tileDefinitionId: tileId,
-            mat3: translationMat3(x, y),
+            ...createPose({ x: x + tile.length / 2, y: y + tile.width / 2 }),
           };
           const rect = placementFootprint(candidate, tile);
           if (!insideBounds(rect, bounds)) continue;
@@ -257,10 +255,7 @@ export function solveLayout(input: SolveInput): DesignInstanceJson {
           if (hit) continue;
           const score = scoreCandidate(input.designFamily, tiles, placements, candidate);
           if (!best || score > best.score) {
-            best = {
-              score,
-              placement: { ...candidate, id: crypto.randomUUID() },
-            };
+            best = { score, placement: candidate };
           }
         }
       }

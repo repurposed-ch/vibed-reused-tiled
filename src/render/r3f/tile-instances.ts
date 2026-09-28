@@ -1,6 +1,7 @@
 import type { PlacementJson } from '@/domain/instance';
 import type { Mat3Json } from '@/domain/mat3';
 import type { MaterialDefinitionJson } from '@/domain/material';
+import { poseToMat3 } from '@/domain/pose';
 import { hasCompleteRhythm, type TileDefinitionJson } from '@/domain/tile';
 import { hashEdgeName } from '@/render/materials/bake';
 import { seamlessnessReport, worstSeverity } from '@/render/materials/seamlessness';
@@ -110,10 +111,9 @@ export function quantizeTint(v: number): number {
 /**
  * Deterministic variation for one tile.
  *
- * Keyed on tile type and position, never on placement id: ids are fresh UUIDs on every
- * solve, and auto-solve runs on every load and edit, so an id-keyed offset would reshuffle
- * constantly. Three numbers are always drawn, so switching tint on or off never changes the
- * offsets.
+ * Keyed on tile type and position, never on the placement's index: auto-solve runs on every
+ * load and edit, and an index-keyed offset would reshuffle whenever the order shifts. Three
+ * numbers are always drawn, so switching tint on or off never changes the offsets.
  */
 export function variationFor(
   tileId: string,
@@ -197,7 +197,7 @@ export function buildTileInstances(
     const tints = allow.tint ? new Float32Array(count) : null;
 
     list.forEach((placement, i) => {
-      const pose = decomposePlacement(placement.mat3, tile);
+      const pose = decomposePlacement(poseToMat3(placement, tile), tile);
       matrices.set(pose.matrix, i * 16);
       const variation = variationFor(tileId, pose.center, settings, allow);
       uvXform[i * 3] = variation.offset[0];

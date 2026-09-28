@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
 import { placementBlock } from '@/domain/instance';
 import { transformPointMat3 } from '@/domain/mat3';
+import { poseToMat3 } from '@/domain/pose';
 import { createTileDefinition, type TileDefinitionJson } from '@/domain/tile';
 import {
   createMasterGrid,
@@ -38,8 +39,7 @@ function rect(x0: number, y0: number, x1: number, y1: number): BoundaryCondition
   } as BoundaryConditionsJson;
 }
 
-const inst = (id: string, tile: string, i: number, j: number, iSpan = 1, jSpan = 1): TileGridInstanceJson => ({
-  id,
+const inst = (tile: string, i: number, j: number, iSpan = 1, jSpan = 1): TileGridInstanceJson => ({
   tileDefinitionId: tile,
   i,
   j,
@@ -55,7 +55,7 @@ function schema(frame?: TileSchemaJson['frame']): TileSchemaJson {
     cell: { x: CELL, y: CELL },
     joint: JOINT,
     extent: { iCount: 2, jCount: 2 },
-    instances: [inst('g0', 'g', 0, 0, 2, 1), inst('s0', 's', 0, 1), inst('s1', 's', 1, 1)],
+    instances: [inst('g', 0, 0, 2, 1), inst('s', 0, 1), inst('s', 1, 1)],
     fallbackTileDefinitionId: 's',
   });
   const master = createMasterGrid({ id: 'm', childId: grid.id, u: { i: 2, j: 0 }, v: { i: 0, j: 2 } });
@@ -128,7 +128,7 @@ describe('fill with a joint', () => {
         [tile.length, tile.width],
         [0, tile.width],
       ] as const) {
-        const world = transformPointMat3(placement.mat3, x, y);
+        const world = transformPointMat3(poseToMat3(placement, tile), x, y);
         const local = toBlock(world.x, world.y);
         expect(local.x).toBeGreaterThanOrEqual(-1e-9);
         expect(local.y).toBeGreaterThanOrEqual(-1e-9);

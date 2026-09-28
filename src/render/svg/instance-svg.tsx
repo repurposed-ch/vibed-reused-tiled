@@ -1,7 +1,8 @@
 import type { BoundaryConditionsJson } from '@/domain/boundaries';
 import { instanceBlocks, type DesignInstanceJson } from '@/domain/instance';
 import type { ProjectJointJson } from '@/domain/joint';
-import { mat3ToSvgMatrix, placementAabb } from '@/domain/mat3';
+import { mat3ToSvgMatrix } from '@/domain/mat3';
+import { poseAabb, poseToMat3 } from '@/domain/pose';
 import { cornerRadiusMetres, tileDisplayColor, type TileDefinitionJson } from '@/domain/tile';
 import { BoundaryPaths } from './boundary-svg';
 import { blocksBounds, groutPathD } from './grout-path';
@@ -28,10 +29,8 @@ export function InstanceSvg({
   for (const pl of instance.placements) {
     const t = tileMap.get(pl.tileDefinitionId);
     if (!t) continue;
-    // Size from the transformed corners: a rotated or mirrored placement spans a
-    // different rectangle than translation plus length/width would suggest, and
-    // measuring it that way clips it out of the viewBox.
-    const aabb = placementAabb(pl.mat3, t);
+    // Size from the transformed corners, so rotated placements stay inside the viewBox.
+    const aabb = poseAabb(pl, t);
     maxX = Math.max(maxX, aabb.maxX);
     maxY = Math.max(maxY, aabb.maxY);
   }
@@ -64,12 +63,12 @@ export function InstanceSvg({
           // One path for all grout: separate shapes that only touch leave hairline seams.
           <path d={groutPathD(blocks)} fill={tileDisplayColor(joint.color)} />
         )}
-        {instance.placements.map((pl) => {
+        {instance.placements.map((pl, index) => {
           const t = tileMap.get(pl.tileDefinitionId);
           if (!t) return null;
           const radius = cornerRadiusMetres(t);
           return (
-            <g key={pl.id} transform={mat3ToSvgMatrix(pl.mat3)}>
+            <g key={index} transform={mat3ToSvgMatrix(poseToMat3(pl, t))}>
               <rect
                 x={0}
                 y={0}

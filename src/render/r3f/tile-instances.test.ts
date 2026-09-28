@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BoxGeometry, Matrix3, Matrix4, Vector3 } from 'three';
-import type { PlacementJson } from '@/domain/instance';
+import { placementFromMat3, type PlacementJson } from '@/domain/instance';
 import {
   multiplyMat3,
   rotationMat3,
@@ -94,7 +94,8 @@ function det2(matrix: number[]): number {
 }
 
 function placement(mat3: Mat3Json, tileDefinitionId = tile.id): PlacementJson {
-  return { id: crypto.randomUUID(), tileDefinitionId, mat3 } as PlacementJson;
+  // Both test tiles share one size, so either poses the matrix the same way.
+  return placementFromMat3({ ...tile, id: tileDefinitionId }, mat3);
 }
 
 describe('decomposePlacement', () => {
@@ -279,9 +280,9 @@ describe('buildTileInstances', () => {
     expect(groups.size).toBe(0);
   });
 
-  it('does not depend on placement ids or order', () => {
+  it('does not depend on placement order', () => {
     const a = layout();
-    const b = [...a].reverse().map((p) => ({ ...p, id: crypto.randomUUID() }));
+    const b = [...a].reverse();
     const byCentre = (list: PlacementJson[]) => {
       const g = buildTileInstances(list, tiles, ON).get(tile.id)!;
       const map = new Map<string, number[]>();

@@ -6,6 +6,7 @@ import {
   translationMat3,
   type Mat3Json,
 } from './mat3';
+import { mat3ToPose, poseToMat3, PoseJsonSchema } from './pose';
 import type { TileDefinitionJson } from './tile';
 
 /** The grid cells a placement's footprint claims, when it came from a tile schema. */
@@ -16,11 +17,13 @@ export const PlacementCellJsonSchema = z.object({
   jSpan: z.number().int().positive(),
 });
 
-export const PlacementJsonSchema = z.object({
-  id: z.string().min(1),
+/**
+ * One tile of a solved layout: which tile, and its pose (centre, rotation, mirror — see
+ * `PoseJsonSchema` for the order they apply in). No id: a layout holds thousands of these and
+ * nothing addresses one individually, so its place in the array is identity enough.
+ */
+export const PlacementJsonSchema = PoseJsonSchema.extend({
   tileDefinitionId: z.string().min(1),
-  mat3: Mat3JsonSchema,
-  moduleId: z.string().optional(),
   /**
    * Integer cell block, rather than a block matrix per placement: the instance is persisted
    * on every edit, and one shared `grid` plus four integers keeps it light. It also
@@ -62,6 +65,15 @@ export type PlacementJson = z.infer<typeof PlacementJsonSchema>;
 export type InstanceGridJson = z.infer<typeof InstanceGridJsonSchema>;
 export type DesignInstanceJson = z.infer<typeof DesignInstanceJsonSchema>;
 
+/** A placement from a rigid tile-local → world matrix (see `mat3ToPose`). */
+export function placementFromMat3(
+  tile: Pick<TileDefinitionJson, 'id' | 'length' | 'width'>,
+  mat3: Mat3Json,
+  cell?: PlacementCellJson,
+): PlacementJson {
+  return { tileDefinitionId: tile.id, ...mat3ToPose(mat3, tile), ...(cell ? { cell } : {}) };
+}
+
 /** Grout margin around a placement with no grid block (design-family layouts). */
 export const FALLBACK_GROUT_MARGIN = 0.001;
 
@@ -100,7 +112,7 @@ export function placementBlock(
       gridAligned: true,
     };
   }
-  const box = transformedRectAabb(placement.mat3, tile.length, tile.width);
+  const box = transformedRectAabb(poseToMat3(placement, tile), tile.length, tile.width);
   const m = FALLBACK_GROUT_MARGIN;
   return {
     mat3: translationMat3(box.minX - m, box.minY - m),

@@ -314,6 +314,7 @@
         border: 1px solid var(--line);
         background: color-mix(in srgb, var(--bg2) 80%, transparent);
         min-width: 0;
+        overflow: hidden;
         transition: border-color 0.15s ease, transform 0.15s ease;
       }
 
@@ -328,38 +329,46 @@
           color-mix(in srgb, var(--bg2) 85%, transparent);
       }
 
-      .tag {
-        align-self: flex-start;
-        font-family: var(--mono);
-        font-size: 0.68rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--muted);
-        border: 1px solid var(--line);
-        padding: 0.2rem 0.45rem;
+      .card-media {
+        display: block;
+        width: calc(100% + 2.5rem);
+        max-width: none;
+        height: auto;
+        flex: none;
+        margin: -1.25rem -1.25rem 0.4rem;
+        aspect-ratio: 16 / 10;
+        object-fit: cover;
+        border-bottom: 1px solid var(--line);
+        transition: transform 0.3s ease;
       }
 
-      .card--main .tag {
-        color: var(--accent);
-        border-color: var(--accent);
+      @media (min-width: 760px) and (max-width: 999px) {
+        /* The main card spans both columns here; keep its image from towering. */
+        .card--main .card-media {
+          aspect-ratio: 21 / 9;
+        }
+      }
+
+      .card:hover .card-media {
+        transform: scale(1.03);
       }
 
       .card h3 {
         margin: 0.25rem 0 0;
-        font-size: 1.15rem;
+        font-size: 1.35rem;
         font-weight: 600;
-        line-height: 1.25;
+        line-height: 1.2;
       }
 
       .by {
         margin: 0;
         color: var(--muted);
-        font-size: 0.85rem;
+        font-size: 0.95rem;
       }
 
       .by strong {
-        color: var(--ink);
-        font-weight: 500;
+        color: var(--accent);
+        font-weight: 600;
       }
 
       .card p.desc {
@@ -544,7 +553,7 @@
           </div>
           <div class="cards">
             <article class="card card--main">
-              <span class="tag">Main app</span>
+              <img class="card-media" src="./assets/cards/app-3d.jpg" alt="3D view of a solved tiling: framed patterned tiles set into a field of smaller tiles" width="960" height="601" loading="lazy" />
               <h3>Vibed · Reused · Tiled</h3>
               <p class="by">Design families for reused tile stock</p>
               <p class="desc">
@@ -556,7 +565,7 @@
             </article>
 
             <article class="card">
-              <span class="tag">Example project</span>
+              <img class="card-media" src="./assets/cards/tile-stock-sampler.jpg" alt="Photo of mixed coloured tiles with each detected tile outlined" width="960" height="719" loading="lazy" />
               <h3>Tile Stock Image Sampler</h3>
               <p class="by">by <strong>Harrison Hildebrandt</strong></p>
               <p class="desc">
@@ -567,7 +576,7 @@
             </article>
 
             <article class="card">
-              <span class="tag">Example project</span>
+              <img class="card-media" src="./assets/cards/tile-patterns.jpg" alt="Generated laying pattern of three tile formats in alternating bands" width="960" height="737" loading="lazy" />
               <h3>Tile Patterns</h3>
               <p class="by">by <strong>Moritz Funck</strong></p>
               <p class="desc">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Group, Mesh, Texture, type InstancedMesh } from 'three';
-import type { DesignInstanceJson, PlacementJson } from '@/domain/instance';
+import { placementFromMat3, type DesignInstanceJson, type PlacementJson } from '@/domain/instance';
 import { translationMat3 } from '@/domain/mat3';
 import { createTileDefinition } from '@/domain/tile';
 import { buildGroutGeometry, createGroutMaterial, groutPlan } from '@/render/r3f/grout-geometry';
@@ -15,11 +15,9 @@ import { buildTileInstances } from '@/render/r3f/tile-instances';
 import { expandInstancedForExport } from './expand-instances';
 
 const tile = createTileDefinition({ id: 't', length: 0.6, width: 0.3, thickness: 0.02, cornerRounding: 0.1 });
-const placements: PlacementJson[] = [0, 1, 2].map((i) => ({
-  id: `p${i}`,
-  tileDefinitionId: tile.id,
-  mat3: translationMat3(i * 0.61, 0),
-}));
+const placements: PlacementJson[] = [0, 1, 2].map((i) =>
+  placementFromMat3(tile, translationMat3(i * 0.61, 0)),
+);
 
 function scene() {
   const exportRoot = new Group();

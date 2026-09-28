@@ -5,6 +5,7 @@ import {
   type DesignInstanceJson,
   type InstanceGridJson,
   type PlacementJson,
+  placementFromMat3,
 } from '@/domain/instance';
 import {
   identityMat3,
@@ -15,6 +16,7 @@ import {
   translationMat3,
   type Mat3Json,
 } from '@/domain/mat3';
+import { poseToMat3 } from '@/domain/pose';
 import { cornerRadiusMetres, createTileDefinition, type TileDefinitionJson } from '@/domain/tile';
 import { groutPathD } from '@/render/svg/grout-path';
 import { buildGroutGeometry, GROUT_BAKE_PERIOD, groutPlan, MIN_GROUT_TOP } from './grout-geometry';
@@ -62,18 +64,14 @@ type Spec = {
 /** A schema-fill-like instance: each tile centred in its cell block. */
 function gridInstance(frame: Mat3Json, specs: Spec[], joint = 0.01): DesignInstanceJson {
   const grid: InstanceGridJson = { frame, cell: { x: CELL, y: CELL }, joint };
-  const placements = specs.map((s, n): PlacementJson => {
+  const placements = specs.map((s): PlacementJson => {
     const iSpan = s.iSpan ?? 1;
     const jSpan = s.jSpan ?? 1;
     const w = s.rotated ? s.tile.width : s.tile.length;
     const h = s.rotated ? s.tile.length : s.tile.width;
     const inset = translationMat3(s.i * CELL + (iSpan * CELL - w) / 2, s.j * CELL + (jSpan * CELL - h) / 2);
-    return {
-      id: `p${n}`,
-      tileDefinitionId: s.tile.id,
-      mat3: multiplyMat3(frame, multiplyMat3(inset, orientation(s.tile, !!s.rotated, !!s.fx, !!s.fy))),
-      cell: { i: s.i, j: s.j, iSpan, jSpan },
-    };
+    const mat3 = multiplyMat3(frame, multiplyMat3(inset, orientation(s.tile, !!s.rotated, !!s.fx, !!s.fy)));
+    return placementFromMat3(s.tile, mat3, { i: s.i, j: s.j, iSpan, jSpan });
   });
   return { type: 'DesignInstance', placements, grid };
 }
@@ -81,7 +79,7 @@ function gridInstance(frame: Mat3Json, specs: Spec[], joint = 0.01): DesignInsta
 function looseInstance(mats: Array<[TileDefinitionJson, Mat3Json]>): DesignInstanceJson {
   return {
     type: 'DesignInstance',
-    placements: mats.map(([tile, mat3], n) => ({ id: `p${n}`, tileDefinitionId: tile.id, mat3 })),
+    placements: mats.map(([tile, mat3]) => placementFromMat3(tile, mat3)),
   };
 }
 
@@ -147,7 +145,7 @@ const cross = (a: P2, b: P2, c: P2) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) *
 function outlineOf(p: PlacementJson): P2[] {
   const tile = catalogue.get(p.tileDefinitionId)!;
   return roundedRectOutline(tile.length, tile.width, cornerRadiusMetres(tile)).map((q) =>
-    transformPointMat3(p.mat3, q.x + tile.length / 2, q.y + tile.width / 2),
+    transformPointMat3(poseToMat3(p, tile), q.x + tile.length / 2, q.y + tile.width / 2),
   );
 }
 
@@ -445,7 +443,7 @@ describe('grout surface edge cases', () => {
     const instance = looseInstance([[square, translationMat3(0, 0)]]);
     const withMissing: DesignInstanceJson = {
       ...instance,
-      placements: [...instance.placements, { id: 'x', tileDefinitionId: 'gone', mat3: translationMat3(1, 1) }],
+      placements: [...instance.placements, placementFromMat3({ ...square, id: 'gone' }, translationMat3(1, 1))],
     };
     expect(read(withMissing).geometry.getAttribute('position').count).toBe(
       read(instance).geometry.getAttribute('position').count,

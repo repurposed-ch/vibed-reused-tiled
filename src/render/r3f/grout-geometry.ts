@@ -8,6 +8,7 @@ import {
   transformPointMat3,
   type Mat3Json,
 } from '@/domain/mat3';
+import { poseToMat3 } from '@/domain/pose';
 import { cornerRadiusMetres, type TileDefinitionJson } from '@/domain/tile';
 import { roundedRectQuarters } from './rounded-slab-geometry';
 import type { TileMaps } from './tile-instanced-mesh';
@@ -84,7 +85,7 @@ export function groutPlan(
     thinnest = Math.min(thinnest, tile.thickness);
     const block = placementBlock(placement, tile, grid);
     blocks.push(rectOf(multiplyMat3(inverse, block.mat3), block.width, block.height));
-    const local = multiplyMat3(inverse, placement.mat3);
+    const local = multiplyMat3(inverse, poseToMat3(placement, tile));
     const rect = rectOf(local, tile.length, tile.width);
     tileRects.push(rect);
     fillets.push(...tileFillets(local, tile, rect));

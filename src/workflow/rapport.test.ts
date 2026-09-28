@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { placementAabb, transformPointMat3 } from '@/domain/mat3';
+import { poseToMat3 } from '@/domain/pose';
 import { createTileDefinition } from '@/domain/tile';
 import { tileGridCells } from '@/domain/tile-grid';
 import {
@@ -173,7 +174,8 @@ describe('rapportToDesignModule', () => {
     expect(designModule.placements.length).toBe(module.placements.length);
 
     const first = designModule.placements[0];
-    expect(first?.localMat3.type).toBe('Mat3');
+    expect(first?.position).toEqual({ x: expect.any(Number), y: expect.any(Number) });
+    expect(first?.mirror).toBe(false);
     expect(first?.tileDefinitionId).toBeTruthy();
   });
 });
@@ -224,7 +226,10 @@ describe('rapportToDesignModule rotation', () => {
     };
 
     const designModule = rapportToDesignModule(module);
-    const mat3 = designModule.placements[0]!.localMat3;
+    const pose = designModule.placements[0]!;
+    expect(pose.rotation).toBe(90);
+    expect(pose.mirror).toBe(false);
+    const mat3 = poseToMat3(pose, slab);
 
     // A rotation moves a different corner to the origin, so assert the
     // footprint the tile ends up occupying rather than where one corner lands.
@@ -235,16 +240,12 @@ describe('rapportToDesignModule rotation', () => {
     expect(aabb.maxX).toBeCloseTo(slab.width, 9);
     expect(aabb.maxY).toBeCloseTo(slab.length, 9);
 
-    // Rotation must be a rigid motion: no scaling, no mirroring.
-    const e = mat3.elements;
-    expect(e[0]! * e[4]! - e[1]! * e[3]!).toBeCloseTo(1, 9);
-
-    // The old behaviour recorded rotation only as a role string, which left the
-    // matrix a pure translation and drew the tile 0.3 wide instead of 0.15.
-    expect(transformPointMat3(mat3, slab.length, 0).y).toBeCloseTo(slab.length, 9);
+    // Local +x (the length) now runs along world +y.
+    const origin = transformPointMat3(mat3, 0, 0);
+    expect(transformPointMat3(mat3, slab.length, 0).y - origin.y).toBeCloseTo(slab.length, 9);
   });
 
-  it('leaves unrotated placements as plain translations', () => {
+  it('leaves square formats unrotated', () => {
     const module = findRapportModule({
       tiles: [large, small],
       targets: [
@@ -257,8 +258,8 @@ describe('rapportToDesignModule rotation', () => {
 
     const designModule = rapportToDesignModule(module);
     for (const placement of designModule.placements) {
-      // Square formats never rotate, so every matrix stays a pure translation.
-      expect(placement.localMat3.elements.slice(0, 6)).toEqual([1, 0, 0, 0, 1, 0]);
+      expect(placement.rotation).toBe(0);
+      expect(placement.mirror).toBe(false);
     }
   });
 });

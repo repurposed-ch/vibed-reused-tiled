@@ -6,6 +6,7 @@ import {
   GROUT_MATERIAL_ID,
   parseTilingProject,
   placementBlock,
+  placementFromMat3,
   instanceBlocks,
   FALLBACK_GROUT_MARGIN,
   removeMaterial,
@@ -126,7 +127,7 @@ describe('placementBlock', () => {
     const frame = multiplyMat3(translationMat3(1, 2), rotationMat3(0.4));
     const grid = { frame, cell: { x: 0.15, y: 0.15 }, joint: 0.01 };
     const block = placementBlock(
-      { id: 'p', tileDefinitionId: 't', mat3: translationMat3(0, 0), cell: { i: 3, j: -1, iSpan: 2, jSpan: 1 } },
+      placementFromMat3(tile, translationMat3(0, 0), { i: 3, j: -1, iSpan: 2, jSpan: 1 }),
       tile,
       grid,
     );
@@ -140,7 +141,7 @@ describe('placementBlock', () => {
   });
 
   it('falls back to the tile bounds plus a margin without a grid', () => {
-    const block = placementBlock({ id: 'p', tileDefinitionId: 't', mat3: translationMat3(2, 3) }, tile);
+    const block = placementBlock(placementFromMat3(tile, translationMat3(2, 3)), tile);
     expect(block.gridAligned).toBe(false);
     expect(block.width).toBeCloseTo(0.29 + 2 * FALLBACK_GROUT_MARGIN, 12);
     expect(transformPointMat3(block.mat3, 0, 0).x).toBeCloseTo(2 - FALLBACK_GROUT_MARGIN, 12);
@@ -150,8 +151,8 @@ describe('placementBlock', () => {
     const instance: DesignInstanceJson = {
       type: 'DesignInstance',
       placements: [
-        { id: 'a', tileDefinitionId: 't', mat3: translationMat3(0, 0) },
-        { id: 'b', tileDefinitionId: 'missing', mat3: translationMat3(1, 0) },
+        placementFromMat3(tile, translationMat3(0, 0)),
+        placementFromMat3({ ...tile, id: 'missing' }, translationMat3(1, 0)),
       ],
     };
     expect(instanceBlocks(instance, new Map([['t', tile]]))).toHaveLength(1);

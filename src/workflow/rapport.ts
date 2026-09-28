@@ -1,5 +1,5 @@
 import type { DesignModuleJson, ModulePlacementJson } from '@/domain/design-family';
-import { multiplyMat3, rotationMat3, translationMat3, type Mat3Json } from '@/domain/mat3';
+import { createPose, type PointJson, type PoseJson } from '@/domain/pose';
 import type { TileDefinitionJson } from '@/domain/tile';
 import {
   createMasterGrid,
@@ -378,52 +378,42 @@ export function mirrorRapport(
  * meeting. `fraction` is relative to the module edge; 0.5 gives a running bond
  * at module scale, thirds break the module edge up more convincingly.
  */
-export function rapportOffsetMat3(
+export function rapportOffset(
   module: RapportModule,
   axis: 'x' | 'y',
   fraction: number,
-): Mat3Json {
+): PointJson {
   if (axis === 'x') {
     const steps = Math.round(fraction * module.widthUnits);
-    return translationMat3(steps * module.unit, module.height);
+    return { x: steps * module.unit, y: module.height };
   }
   const steps = Math.round(fraction * module.heightUnits);
-  return translationMat3(module.width, steps * module.unit);
+  return { x: module.width, y: steps * module.unit };
 }
 
 /**
  * Pose of one rapport placement in module-local space.
  *
- * A rotated placement has to carry its rotation in the matrix. Every consumer —
- * the solver's footprint test, both SVG renderers, the 3D scene — reads
- * `length` and `width` from the tile definition and applies the matrix, so a
- * rotation recorded only as a `role` string draws and packs at the wrong
- * orientation. `p.widthUnits` is the rotated footprint's width, which is the
- * tile's own `width`, so the tile definitions are not needed here.
+ * The tile sits centred on its footprint; a rotated one is turned a quarter turn
+ * about that centre, so its length runs along +y. The footprint is the tile's own
+ * size (rotated when it is), so the tile definitions are not needed here.
  */
-function placementMat3(module: RapportModule, p: RapportPlacement): Mat3Json {
-  const origin = translationMat3(p.xUnits * module.unit, p.yUnits * module.unit);
-  if (!p.rotated) return origin;
-
-  // Rotate a quarter turn about the tile origin, then push it back into the
-  // positive quadrant so the footprint lands on (0,0)–(width, length).
-  const upright = multiplyMat3(
-    translationMat3(p.widthUnits * module.unit, 0),
-    rotationMat3(Math.PI / 2),
+function placementPose(module: RapportModule, p: RapportPlacement): PoseJson {
+  const u = module.unit;
+  return createPose(
+    { x: (p.xUnits + p.widthUnits / 2) * u, y: (p.yUnits + p.heightUnits / 2) * u },
+    p.rotated ? 90 : 0,
   );
-  return multiplyMat3(origin, upright);
 }
 
 /** Wrap a solved module as a DesignModule the existing solver can expand. */
 export function rapportToDesignModule(
   module: RapportModule,
-  options?: { id?: string; name?: string; repeat?: { count: number; offsetMat3: Mat3Json } },
+  options?: { id?: string; name?: string; repeat?: { count: number; offset: PointJson } },
 ): DesignModuleJson {
   const placements: ModulePlacementJson[] = module.placements.map((p) => ({
-    id: crypto.randomUUID(),
     tileDefinitionId: p.tileDefinitionId,
-    localMat3: placementMat3(module, p),
-    role: p.rotated ? 'rotated' : undefined,
+    ...placementPose(module, p),
   }));
 
   return {
@@ -449,7 +439,6 @@ export function rapportToTileGrid(
   options?: { id?: string; name?: string; joint?: number; fallbackTileDefinitionId?: string },
 ): TileGridJson {
   const instances: TileGridInstanceJson[] = module.placements.map((p) => ({
-    id: crypto.randomUUID(),
     tileDefinitionId: p.tileDefinitionId,
     i: p.xUnits,
     j: p.yUnits,

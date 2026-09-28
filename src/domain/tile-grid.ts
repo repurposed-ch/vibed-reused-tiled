@@ -46,9 +46,11 @@ export const Frame2JsonSchema = z.object({
 
 export type Frame2JsonLike = z.infer<typeof Frame2JsonSchema>;
 
-/** One tile occurrence inside the fundamental domain, in integer cells. */
+/**
+ * One tile occurrence inside the fundamental domain, in integer cells. No id: its slot in
+ * `instances` is identity enough.
+ */
 export const TileGridInstanceJsonSchema = z.object({
-  id: z.string().min(1),
   tileDefinitionId: z.string().min(1),
   /** Bottom-left cell of the occurrence. */
   i: z.number().int(),
@@ -200,7 +202,7 @@ export function createTileGridInstance(
   jSpan = 1,
   rotated = false,
 ): TileGridInstanceJson {
-  return { id: crypto.randomUUID(), tileDefinitionId, i, j, iSpan, jSpan, rotated };
+  return { tileDefinitionId, i, j, iSpan, jSpan, rotated };
 }
 
 export function createTileGrid(
@@ -483,7 +485,7 @@ export function putInstance(
 export function removeInstanceAt(grid: TileGridJson, i: number, j: number): TileGridJson {
   const hit = instanceAtCell(grid, i, j);
   if (!hit) return grid;
-  return { ...grid, instances: grid.instances.filter((instance) => instance.id !== hit.id) };
+  return { ...grid, instances: grid.instances.filter((instance) => instance !== hit) };
 }
 
 /**

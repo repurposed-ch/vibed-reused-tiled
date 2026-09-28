@@ -121,7 +121,7 @@ All domain types are JSON-serializable. Math geometry reuses the existing `type`
 /** Root document — load / upload this file. */
 type TilingProjectJson = {
   type: 'TilingProject';
-  schemaVersion: 3;
+  schemaVersion: 5;
   meta?: { name?: string; updatedAt?: string };
   /** SDF-only material recipes (compiled to GLSL and baked at runtime). */
   materials: MaterialDefinitionJson[];
@@ -193,7 +193,6 @@ type TileDefinitionJson = {
   thickness: number;
   materialId: string;
   color: TileColorJson;
-  texture?: string; // optional cached bake data URL
   rhythm?: Record<FacadeSide, RhythmSideJson>; // all four or omit
 };
 ```
@@ -236,19 +235,31 @@ type Mat3Json = {
   elements: [number, number, number, number, number, number, number, number, number];
 };
 
-type ModulePlacementJson = {
-  /** Local id within the module */
-  id: string;
+/** A plain point; no `type` tag, since layouts hold thousands of them. */
+type PointJson = { x: number; y: number };
+
+/**
+ * Where a tile sits, applied in a fixed order: mirror → rotate → move.
+ * `mirror` flips the tile's local x (its length) about the tile centre, `rotation` then turns
+ * it counter-clockwise about the centre in degrees, and `position` is where the centre lands:
+ * T(position) · R(rotation) · S(mirror ? −1 : 1, 1) · T(−length/2, −width/2).
+ * A flip in y is rotation + 180 with mirror.
+ */
+type PoseJson = {
+  position: PointJson;
+  rotation: number;
+  mirror: boolean;
+};
+
+/** No id: a placement's slot in the array is its identity. */
+type ModulePlacementJson = PoseJson & {
   tileDefinitionId: string;
-  /** Pose relative to module origin */
-  localMat3: Mat3Json;
-  role?: string;
 };
 
 type ModuleRepeatJson = {
   count: number;
-  /** Offset applied between repeats in module-local space */
-  offsetMat3: Mat3Json;
+  /** Shift between successive copies of the module */
+  offset: PointJson;
 };
 
 type DesignModuleJson = {
@@ -256,8 +267,6 @@ type DesignModuleJson = {
   id: string;
   name: string;
   placements: ModulePlacementJson[];
-  /** Optional nested modules (instanced by id + local transform) */
-  children?: Array<{ moduleId: string; localMat3: Mat3Json }>;
   repeat?: ModuleRepeatJson;
   /** How the module anchors when dropped into a boundary / guide */
   anchor?: 'origin' | 'centroid' | 'bboxMin';
@@ -317,18 +326,18 @@ Free region conceptually: union of `outers` minus `holes`. Guides do not clip; t
 ### 4.5 Design instance (output)
 
 ```ts
-type PlacementJson = {
-  id: string;
+/** World pose of one tile (see PoseJson). No id: its slot in the array is its identity. */
+type PlacementJson = PoseJson & {
   tileDefinitionId: string;
-  /** World transform of the tile local frame */
-  mat3: Mat3Json;
-  /** If this placement came from a module instance */
-  moduleId?: string;
+  /** The grid cells its footprint claims, when it came from a tile schema */
+  cell?: { i: number; j: number; iSpan: number; jSpan: number };
 };
 
 type DesignInstanceJson = {
   type: 'DesignInstance';
   placements: PlacementJson[];
+  /** The base grid a schema fill laid out: world frame, cell pitch, joint */
+  grid?: { frame: Mat3Json; cell: { x: number; y: number }; joint: number };
   meta?: {
     seed?: number;
     sampledStock?: Array<{ tileDefinitionId: string; count: number }>;
@@ -391,8 +400,8 @@ bun test
 `#/design-family` is a first-class authoring surface:
 
 1. **Module list** — create / rename / delete; select active module
-2. **Module canvas** — place tiles from the catalog; drag / rotate / snap; edits write `localMat3`
-3. **Nesting / repeat / anchor** — controls for children, `ModuleRepeatJson`, anchor mode
+2. **Module canvas** — place tiles from the catalog; drag / rotate / snap; edits write each placement's pose
+3. **Repeat / anchor** — controls for `ModuleRepeatJson` and anchor mode
 4. **Constraint panel** — add weighted soft rules (`rhythmMatch`, `adjacencyPrefer`, `materialAlternate`, `gapTolerance`)
 5. **Live SVG preview** of the active module (and optional expanded repeat)
 6. **Import / export** family JSON fragment
@@ -448,7 +457,7 @@ The client wraps this into a text prompt and asks for DesignFamily JSON only.
 
 ### 9.1 2D (SVG → PDF)
 
-- For each `PlacementJson`, apply `mat3` to the tile rectangle `(0,0)–(length,width)`.
+- For each `PlacementJson`, turn its pose into a matrix (`poseToMat3`) and apply it to the tile rectangle `(0,0)–(length,width)`.
 - Emit SVG `<g transform="matrix(a,b,c,d,e,f)">` (map from column-major `Mat3`).
 - Draw fill from display color only (`brightness.color` or palette middle swatch); no textures in layout 2D.
 - Boundaries / guides as underlay.
@@ -457,13 +466,13 @@ The client wraps this into a text prompt and asks for DesignFamily JSON only.
 
 ### 9.2 3D (R3F) and AR export
 
-- Extrude each tile by `thickness` along local +Z; apply world transform from `mat3` (planar XY).
+- Extrude each tile by `thickness` along local +Z; apply the world transform from its pose (planar XY).
 - Albedo from GLSL bake: SDF + tile color mode (brightness or Quilez palette) + continuous or edged UV (rhythm).
 - Export in-browser from the R3F tile export group:
   - **GLB** via Three.js `GLTFExporter` (embedded baked images)
   - **USDZ** via Three.js `USDZExporter` (`quickLookCompatible`, horizontal plane anchoring)
 - Floor / helpers use `userData.export === false`.
-- Project JSON download embeds optional `tile.texture` data URLs.
+- Project JSON stores only each texture's recipe (material + tile colour / rhythm); textures are baked on load, never stored.
 
 ---
 
