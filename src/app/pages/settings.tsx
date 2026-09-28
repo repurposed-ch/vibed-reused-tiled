@@ -79,7 +79,7 @@ export function SettingsPage() {
                 placeholder={`${provider.label} API key`}
               />
               {provider.keyUrl && (
-                <p className="muted" style={{ marginTop: '0.35rem' }}>
+                <p className="muted mt-1">
                   Get a key:{' '}
                   <a href={provider.keyUrl} target="_blank" rel="noreferrer">
                     {provider.keyUrl.replace(/^https?:\/\//, '')}
@@ -97,7 +97,7 @@ export function SettingsPage() {
             </p>
           )}
         </div>
-        <p className="muted" style={{ marginTop: '0.75rem' }}>
+        <p className="muted mt-3">
           Defaults from <span className="mono">VITE_LLM_PROVIDER</span> /{' '}
           <span className="mono">VITE_LLM_MODEL</span> when set at build time. Browser CORS may
           block some providers — switch provider if a call fails with a network error. Do not

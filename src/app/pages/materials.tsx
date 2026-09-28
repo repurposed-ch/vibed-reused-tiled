@@ -28,7 +28,7 @@ export function MaterialsPage() {
     return (
       <div className="page">
         <p className="crumbs no-print">
-          <Link to="/materials">← Materials</Link>
+          <Link to="/materials">Materials</Link> / <span>{selected.name}</span>
         </p>
         <MaterialEditor material={selected} onClose={() => navigate('/materials')} />
       </div>

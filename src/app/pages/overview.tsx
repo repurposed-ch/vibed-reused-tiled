@@ -10,7 +10,7 @@ function PreviewCard({ title, to, children }: { title: string; to: string; child
     <section className="panel preview-card">
       <header className="preview-card-head">
         <h2>{title}</h2>
-        <Link to={to}>Open {title} →</Link>
+        <Link to={to}>Open {title} view</Link>
       </header>
       {children}
     </section>
@@ -120,7 +120,7 @@ export function OverviewPage() {
             }}
           />
         </div>
-        <p className="muted" style={{ marginTop: '0.75rem' }}>
+        <p className="muted mt-3">
           Autosaved in localStorage. Counts: {project.tileDefinitions.length} tiles,{' '}
           {project.stock.entries.length} stock entries, {project.designFamily.modules.length}{' '}
           modules, {project.instance?.placements.length ?? 0} placements.

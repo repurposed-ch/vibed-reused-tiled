@@ -201,8 +201,8 @@ export function View3dPage() {
           <CogIcon />
         </button>
         <div id="view3d-settings" popover="auto" className="view3d-popover">
-          <div className="stack" style={{ gap: '0.35rem' }}>
-            <label className="row" style={{ gap: '0.45rem', alignItems: 'center', margin: 0 }}>
+          <div className="stack gap-1">
+            <label className="row tight m-0">
               <input
                 type="checkbox"
                 checked={variation.enabled}
@@ -218,12 +218,8 @@ export function View3dPage() {
                     { key: 'tint', label: 'Tint', max: MAX_TINT, step: 0.01 },
                   ] as const
                 ).map((c) => (
-                  <div
-                    key={c.key}
-                    className="row"
-                    style={{ gap: '0.5rem', alignItems: 'center', flexWrap: 'nowrap' }}
-                  >
-                    <span className="mono muted" style={{ width: '3.5rem', fontSize: '0.75rem' }}>
+                  <div key={c.key} className="row tight">
+                    <span className="readout">
                       {c.label}
                     </span>
                     <input
@@ -232,10 +228,10 @@ export function View3dPage() {
                       max={c.max}
                       step={c.step}
                       value={variation[c.key]}
-                      style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+                      className="range"
                       onChange={(e) => setVariation({ [c.key]: Number(e.target.value) })}
                     />
-                    <span className="mono muted" style={{ width: '2.5rem', fontSize: '0.75rem' }}>
+                    <span className="readout">
                       {variation[c.key].toFixed(2)}
                     </span>
                   </div>
@@ -249,7 +245,7 @@ export function View3dPage() {
                 </button>
               </>
             )}
-            <p className="muted" style={{ margin: 0, fontSize: '0.7rem' }}>
+            <p className="muted tiny m-0">
               Continuous tiles only — tiles with an edge rhythm must match their neighbours.
             </p>
           </div>

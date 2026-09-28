@@ -191,7 +191,7 @@ export function BoundariesPage() {
         <div className="row">
           <div className="field" style={{ minWidth: 'auto' }}>
             <label>Tool</label>
-            <div className="row" style={{ gap: '0.25rem' }}>
+            <div className="row gap-1">
               <button
                 type="button"
                 className={ui.drawTool === 'draw' ? 'btn primary' : 'btn'}
@@ -232,7 +232,7 @@ export function BoundariesPage() {
           </div>
         </div>
 
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="row mt-3">
           <button type="button" className="btn" onClick={fit}>
             Fit
           </button>
@@ -282,7 +282,7 @@ export function BoundariesPage() {
           </button>
         </div>
 
-        <div className="canvas-frame" style={{ marginTop: '1rem', padding: 0 }}>
+        <div className="canvas-frame mt-4">
           <BoundaryDrawCanvas
             loops={loops}
             resolution={ui.drawResolution}
@@ -298,7 +298,7 @@ export function BoundariesPage() {
           />
         </div>
 
-        <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+        <p className="note">
           <span style={{ color: ORIENTATION_STROKE.ccw }}>■</span> counter-clockwise is solid ·{' '}
           <span style={{ color: ORIENTATION_STROKE.cw }}>■</span> clockwise is a hole. Scroll to zoom; middle-drag or Space+drag to pan.{' '}
           {ui.drawTool === 'draw'
@@ -309,13 +309,13 @@ export function BoundariesPage() {
             : ''}
         </p>
         {selected && selected.length >= 3 && (
-          <p className="mono muted" style={{ marginTop: '0.25rem' }}>
+          <p className="mono muted mt-1">
             Selected: {orientationOf(selected) === 'ccw' ? 'solid (counter-clockwise)' : 'hole (clockwise)'}{' '}
             · {Math.abs(signedArea(selected)).toFixed(2)} m² · {selected.length} vertices
           </p>
         )}
         {undrawable > 0 && (
-          <p className="error" style={{ marginTop: '0.5rem' }}>
+          <p className="error mt-2">
             {undrawable} stored outer/hole shape cannot be drawn or filled — only Polygon2 and Aabb2
             are supported. Edit it in the JSON below.
           </p>
@@ -333,7 +333,7 @@ export function BoundariesPage() {
               onChange={(e) => setRaw(e.target.value)}
             />
           </div>
-          <div className="row" style={{ marginTop: '0.75rem' }}>
+          <div className="row mt-3">
             <button type="button" className="btn primary" onClick={applyJson}>
               Apply JSON
             </button>
@@ -341,25 +341,25 @@ export function BoundariesPage() {
               Reload from project
             </button>
           </div>
-          {error && <p className="error" style={{ marginTop: '0.75rem' }}>{error}</p>}
+          {error && <p className="error mt-3">{error}</p>}
         </section>
 
         <section className="panel">
           <h2>Preview</h2>
-          <div className="canvas-frame" style={{ padding: '1rem' }}>
+          <div className="canvas-frame" style={{ padding: 'var(--s4)' }}>
             <BoundarySvg boundaries={project.boundaries} />
           </div>
-          <p className="muted" style={{ marginTop: '0.75rem' }}>
+          <p className="muted mt-3">
             Solids: {solids} · Holes: {holes} · Guides: {project.boundaries.guides.length}
           </p>
           {/* The shape that actually gets tiled, as a number as well as a picture. */}
-          <p className="mono muted" style={{ marginTop: '0.25rem' }}>
+          <p className="mono muted mt-1">
             {region.empty
               ? 'Tiled region: empty — nothing will be laid.'
               : `Tiled region: ${region.area.toFixed(2)} m² across ${region.polygons.length} loop${region.polygons.length === 1 ? '' : 's'}`}
           </p>
           {region.problem && (
-            <p className="error" style={{ marginTop: '0.5rem' }}>
+            <p className="error mt-2">
               {region.problem}
             </p>
           )}

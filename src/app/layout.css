@@ -1,27 +1,46 @@
 :root {
-  --bg0: #1a1714;
-  --bg1: #241f1a;
-  --bg2: #2e2822;
-  --ink: #f3ebe1;
-  --muted: #b5a89a;
-  --line: #4a4036;
-  --accent: #d9773a;
-  --accent-2: #6f8f6a;
-  --danger: #c45c5c;
-  --font: 'DM Sans', sans-serif;
-  --mono: 'Fragment Mono', ui-monospace, monospace;
+  --paper: #f6f4ef;
+  --surface: #fbfaf7;
+  --sunken: #eeebe4;
+  --ink: #1c1b19;
+  --muted: #6b665d;
+  --line: #d8d3c8;
+  --line-strong: #b9b2a4;
+  --accent: #24508f;
+  --warn: #9a5b00;
+  --danger: #a33a2a;
+  --ok: #3d6b35;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s6: 1.5rem;
   --header-height: 3.75rem;
+  color-scheme: light;
   color: var(--ink);
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #3a2a1f 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #2a3328 0%, transparent 50%),
-    var(--bg0);
+  background: var(--paper);
   font-family: var(--font);
   line-height: 1.45;
 }
 
 * {
   box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.18em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='range'] {
+  accent-color: var(--accent);
 }
 
 html,
@@ -62,7 +81,7 @@ textarea {
   padding-left: calc(1rem + env(safe-area-inset-left, 0px));
   padding-right: calc(1rem + env(safe-area-inset-right, 0px));
   border-bottom: 1px solid var(--line);
-  background: var(--bg1);
+  background: var(--surface);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -77,10 +96,6 @@ textarea {
   flex: 0 1 auto;
   color: inherit;
   text-decoration: none;
-}
-
-.brand:hover .brand-mark {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .brand > div {
@@ -137,31 +152,27 @@ textarea {
 .nav-link {
   color: var(--muted);
   text-decoration: none;
-  border: 1px solid transparent;
 }
 
 .inline-link {
   padding: 0.4rem 0.55rem;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   white-space: nowrap;
+  border-bottom: 2px solid transparent;
 }
 
 .inline-link:hover {
   color: var(--ink);
-  border-color: var(--line);
 }
 
 .inline-link.active {
   color: var(--ink);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  font-weight: inherit;
+  border-bottom-color: var(--accent);
 }
 
 .drawer-link.active {
   color: var(--ink);
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-left-color: var(--accent);
   font-weight: 600;
 }
 
@@ -193,7 +204,7 @@ textarea {
   width: 44px;
   height: 44px;
   border: 1px solid var(--line);
-  background: var(--bg0);
+  background: var(--surface);
   color: var(--ink);
   display: grid;
   place-items: center;
@@ -202,7 +213,7 @@ textarea {
 }
 
 .menu-toggle:hover {
-  border-color: var(--accent);
+  border-color: var(--line-strong);
 }
 
 .menu-toggle-icon {
@@ -237,7 +248,7 @@ textarea {
   border: 0;
   padding: 0;
   margin: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(28, 27, 25, 0.25);
   cursor: pointer;
 }
 
@@ -255,7 +266,7 @@ textarea {
   padding: 1rem;
   padding-top: calc(1rem + env(safe-area-inset-top, 0px));
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  background: var(--bg1);
+  background: var(--surface);
   border-left: 1px solid var(--line);
   transform: translateX(100%);
   transition: transform 0.2s ease;
@@ -278,23 +289,20 @@ textarea {
 .nav-drawer-label {
   margin: 0 0 0.5rem;
   color: var(--muted);
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.8rem;
 }
 
 .drawer-link {
   display: block;
   padding: 0.85rem 0.75rem;
   font-size: 1rem;
-  border: 1px solid transparent;
+  border-left: 2px solid transparent;
   text-decoration: none;
   color: var(--muted);
 }
 
 .drawer-link:hover {
   color: var(--ink);
-  border-color: var(--line);
 }
 
 .app-main {
@@ -340,7 +348,7 @@ textarea {
 }
 
 .panel {
-  background: color-mix(in srgb, var(--bg2) 80%, transparent);
+  background: var(--surface);
   border: 1px solid var(--line);
   padding: 1rem;
   margin-bottom: 1rem;
@@ -368,17 +376,15 @@ textarea {
 }
 
 .field label {
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .field input,
 .field select,
 .field textarea {
-  background: var(--bg0);
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   color: var(--ink);
   padding: 0.45rem 0.55rem;
   min-width: 0;
@@ -415,8 +421,8 @@ textarea {
 
 .btn {
   appearance: none;
-  border: 1px solid var(--line);
-  background: var(--bg1);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
   padding: 0.55rem 0.85rem;
   cursor: pointer;
@@ -425,22 +431,181 @@ textarea {
 }
 
 .btn:hover {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 .btn.primary {
-  background: color-mix(in srgb, var(--accent) 25%, var(--bg1));
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.btn.primary:hover {
+  background: var(--accent);
   border-color: var(--accent);
 }
 
 .btn.danger {
   border-color: var(--danger);
-  color: #f0cfcf;
+  color: var(--danger);
 }
 
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  border-color: var(--line-strong);
+}
+
+.btn.primary:disabled:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.btn.sm {
+  min-height: 0;
+  padding: 0.35rem 0.6rem;
+}
+
+.btn.xs {
+  min-height: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* Small layout helpers on the spacing scale, for the few places a class beats a wrapper. */
+.row.tight {
+  gap: var(--s2);
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.row.gap-1 {
+  gap: var(--s1);
+}
+
+.row.gap-2 {
+  gap: var(--s2);
+}
+
+.row.center {
+  align-items: center;
+}
+
+.row.between {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.row.end {
+  justify-content: flex-end;
+}
+
+.stack.gap-0 {
+  gap: 0;
+}
+
+.stack.gap-1 {
+  gap: var(--s1);
+}
+
+.stack.gap-2 {
+  gap: var(--s2);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A plain bullet list of validation issues. */
+.issues {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.75rem;
+}
+
+/* The numeric value printed next to a slider. */
+.readout {
+  flex: 0 0 auto;
+  min-width: 3rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mt-0 {
+  margin-top: 0;
+}
+
+.mt-1 {
+  margin-top: var(--s1);
+}
+
+.mt-2 {
+  margin-top: var(--s2);
+}
+
+.mt-3 {
+  margin-top: var(--s3);
+}
+
+.mt-4 {
+  margin-top: var(--s4);
+}
+
+.m-0 {
+  margin: 0;
+}
+
+.mb-2 {
+  margin-bottom: var(--s2);
+}
+
+.mb-4 {
+  margin-bottom: var(--s4);
+}
+
+.note {
+  margin: var(--s2) 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.tiny {
+  font-size: 0.75rem;
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.sev-error {
+  color: var(--danger);
+}
+
+.sev-warning {
+  color: var(--warn);
+}
+
+.sev-info {
+  color: var(--muted);
+}
+
+.range {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
 }
 
 .stack {
@@ -497,9 +662,11 @@ textarea {
 .table th {
   color: var(--muted);
   font-weight: 500;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+}
+
+.table td {
+  font-variant-numeric: tabular-nums;
 }
 
 .muted {
@@ -511,11 +678,12 @@ textarea {
   font-size: 0.85rem;
 }
 
+/* A faint drafting grid behind the drawings. */
 .canvas-frame {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 35%, transparent) 1px, transparent 1px),
-    linear-gradient(0deg, color-mix(in srgb, var(--line) 35%, transparent) 1px, transparent 1px),
-    var(--bg0);
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(0deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    var(--surface);
   background-size: 24px 24px;
   border: 1px solid var(--line);
   min-height: 320px;
@@ -560,18 +728,22 @@ pre {
   color: var(--muted);
 }
 
+.error,
+.success {
+  padding: 0.55rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+}
+
 .error {
-  color: #f0cfcf;
-  border: 1px solid var(--danger);
-  padding: 0.65rem 0.75rem;
-  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  border-left-color: var(--danger);
 }
 
 .success {
-  color: #d7ecd3;
-  border: 1px solid var(--accent-2);
-  padding: 0.65rem 0.75rem;
-  background: color-mix(in srgb, var(--accent-2) 15%, transparent);
+  color: var(--ok);
+  border-left-color: var(--ok);
 }
 
 /* Fullscreen 3D */
@@ -582,7 +754,7 @@ pre {
   height: calc(100svh - var(--header-height) - env(safe-area-inset-top, 0px));
   width: 100%;
   max-width: 100%;
-  background: var(--bg0);
+  background: var(--sunken);
   touch-action: none;
   overflow: hidden;
   isolation: isolate;
@@ -633,9 +805,12 @@ pre {
 }
 
 .preview-card-head a {
-  color: var(--accent);
+  color: var(--muted);
   font-size: 0.85rem;
-  text-decoration: none;
+}
+
+.preview-card-head a:hover {
+  color: var(--ink);
 }
 
 .preview-frame {
@@ -646,7 +821,7 @@ pre {
 }
 
 .preview-3d {
-  background: var(--bg0);
+  background: var(--sunken);
   touch-action: none;
 }
 
@@ -661,7 +836,7 @@ pre {
   display: grid;
   place-items: center;
   padding: 0.75rem;
-  background: #f7f3ec;
+  background: var(--surface);
 }
 
 .preview-2d svg {
@@ -725,10 +900,10 @@ pre {
   margin: 0;
   width: min(18rem, calc(100vw - 1.5rem));
   padding: 0.85rem;
-  background: var(--bg1);
+  background: var(--surface);
   color: var(--ink);
-  border: 1px solid var(--line);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 6px 18px rgba(28, 27, 25, 0.12);
 }
 
 .btn-link {
@@ -738,16 +913,16 @@ pre {
   gap: 0.35rem;
   min-height: 36px;
   padding: 0.35rem 0.6rem;
-  border: 0;
-  background: color-mix(in srgb, var(--bg0) 55%, transparent);
-  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .btn-link:hover {
-  color: var(--accent);
+  border-color: var(--ink);
 }
 
 .btn-icon {
@@ -756,16 +931,15 @@ pre {
   place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg1) 85%, transparent);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
   font-size: 1.15rem;
   cursor: pointer;
 }
 
 .btn-icon:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--ink);
 }
 
 /* Beats `.page svg` / `.panel svg`, which stretch every svg to full width. */
@@ -826,7 +1000,7 @@ svg.icon {
   align-content: start;
   text-align: left;
   padding: 0.5rem;
-  background: color-mix(in srgb, var(--bg2) 80%, transparent);
+  background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink);
   cursor: pointer;
@@ -834,13 +1008,13 @@ svg.icon {
 }
 
 .card:hover {
-  border-color: var(--accent);
+  border-color: var(--ink);
 }
 
 /* Match the material cards: the tile preview sits in its own framed box. */
 .card > .fluid-svg {
   border: 1px solid var(--line);
-  background: var(--bg0);
+  background: var(--sunken);
 }
 
 .card-title {
@@ -869,7 +1043,7 @@ svg.icon {
   aspect-ratio: 1;
   object-fit: cover;
   border: 1px solid var(--line);
-  background: var(--bg0);
+  background: var(--sunken);
 }
 
 .crumbs {
@@ -899,12 +1073,12 @@ svg.icon {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
-  background: var(--bg1);
+  background: var(--surface);
   border: 1px solid var(--line);
+  border-bottom-color: var(--line-strong);
   padding: 0.75rem;
   padding-top: 1.1rem;
   margin-bottom: 1rem;
-  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.7);
 }
 
 .sticky-preview .material-thumb {

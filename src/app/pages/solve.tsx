@@ -72,7 +72,7 @@ export function SolvePage() {
             Generate 4 variants
           </button>
         </div>
-        {message && <p className="success" style={{ marginTop: '0.75rem' }}>{message}</p>}
+        {message && <p className="success mt-3">{message}</p>}
       </section>
 
       {variants.length > 0 && (

@@ -9,7 +9,7 @@ export function View2dPage() {
       <h1>2D view</h1>
       <p className="lede">SVG rendering of the design instance for screen and PDF print.</p>
 
-      <div className="row no-print" style={{ marginBottom: '1rem' }}>
+      <div className="row no-print mb-4">
         <button type="button" className="btn primary" onClick={() => window.print()}>
           Print / Save PDF
         </button>
@@ -19,7 +19,7 @@ export function View2dPage() {
 
       {project.instance && (
         <section className="panel">
-          <div className="canvas-frame" style={{ padding: '1rem', background: '#f7f3ec' }}>
+          <div className="canvas-frame" style={{ padding: 'var(--s4)' }}>
             <InstanceSvg
               instance={project.instance}
               tiles={project.tileDefinitions}

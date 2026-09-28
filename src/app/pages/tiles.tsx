@@ -6,12 +6,6 @@ import { tileFitStatus } from '../components/tile-fit';
 import { TilePreview, tileDimensions, tileUvLabel } from '../components/tile-preview';
 import { useProject } from '../project-context';
 
-const FIT_COLOR: Record<string, string | undefined> = {
-  ok: undefined,
-  warning: '#d9773a',
-  error: '#c45c5c',
-};
-
 /**
  * Tiles as a gallery: a card per tile, and the editor only once one is opened.
  *
@@ -34,7 +28,7 @@ export function TilesPage() {
     return (
       <div className="page">
         <p className="crumbs no-print">
-          <Link to="/tiles">← Tile definitions</Link>
+          <Link to="/tiles">Tile definitions</Link> / <span>{selected.name}</span>
         </p>
         <TileEditor tile={selected} onClose={() => navigate('/tiles')} />
       </div>
@@ -71,7 +65,7 @@ export function TilesPage() {
                 {tileDimensions(tile)} · {tileUvLabel(tile)}
               </span>
               {fit && fit.kind !== 'ok' && (
-                <span className="card-meta mono" style={{ color: FIT_COLOR[fit.kind] }} title={fit.message}>
+                <span className={`card-meta mono sev-${fit.kind}`} title={fit.message}>
                   {fit.short}
                 </span>
               )}
