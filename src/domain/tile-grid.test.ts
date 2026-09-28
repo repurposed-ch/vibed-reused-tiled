@@ -13,6 +13,7 @@ import {
   instanceAtCell,
   masterChain,
   overclaimedCells,
+  pickUnitFallback,
   putInstance,
   removeInstanceAt,
   removeRootMasterLevel,
@@ -318,7 +319,7 @@ describe('setTileGridExtent', () => {
     return schemaOf(grid, { i: iCount, j: 0 }, { i: 0, j: jCount });
   }
 
-  const unit = { fallbackIsUnit: true };
+  const unit = { fallbackId: 'b' };
   const master = (schema: TileSchemaJson) => schema.masterGrids[0]!;
   const grid = (schema: TileSchemaJson) => schema.tileGrids[0]!;
 
@@ -404,12 +405,12 @@ describe('setTileGridExtent', () => {
       schemaOf(gridA3(), { i: 4, j: 0 }, { i: 0, j: 4 }),
       'grid',
       { iCount: 2, jCount: 4 },
-      { fallbackIsUnit: false },
+      { fallbackId: null },
     );
     expect(shrunk.brokenDown).toBe(0);
     expect(grid(shrunk.schema).instances.every((i) => i.tileDefinitionId === 'b')).toBe(true);
     const grown = setTileGridExtent(stack(2, 2), 'grid', { iCount: 3, jCount: 2 }, {
-      fallbackIsUnit: false,
+      fallbackId: null,
     });
     expect(grown.filled).toBe(0);
   });
@@ -433,5 +434,33 @@ describe('clearTileGrid', () => {
     expect(cleared.masterGrids[0]!.u).toEqual({ i: 4, j: 0 });
     expect(cleared.masterGrids[0]!.v).toEqual({ i: 0, j: 4 });
     expect(cleared.masterGrids[0]!.mirror).toEqual({ x: 'none', y: 'none' });
+  });
+});
+
+describe('pickUnitFallback', () => {
+  const unitB = createTileDefinition({ id: 'b', name: 'b', length: CELL, width: CELL });
+  const bigA = createTileDefinition({ id: 'a', name: 'a', length: CELL * 3, width: CELL * 3 });
+  const smallS = createTileDefinition({ id: 's', name: 's', length: CELL - 0.01, width: CELL - 0.01 });
+  const tinyT = createTileDefinition({ id: 't', name: 't', length: CELL - 0.05, width: CELL - 0.05 });
+
+  it('keeps a declared fallback that covers one cell, undersized included', () => {
+    expect(pickUnitFallback(gridA3(), [bigA, unitB])?.id).toBe('b');
+    const declaredSmall = { ...gridA3(), fallbackTileDefinitionId: 's' };
+    expect(pickUnitFallback(declaredSmall, [bigA, unitB, smallS])?.id).toBe('s');
+  });
+
+  it('prefers a one-cell format the grid already uses when the declared one is gone', () => {
+    const stale = { ...gridA3(), fallbackTileDefinitionId: 'deleted' };
+    expect(pickUnitFallback(stale, [smallS, bigA, unitB])?.id).toBe('b');
+  });
+
+  it('otherwise takes the one-cell catalogue format closest to the cell', () => {
+    const onlyA = { ...gridA3(), instances: [instance('a', 0, 0, 3)], fallbackTileDefinitionId: 'a' };
+    expect(pickUnitFallback(onlyA, [bigA, tinyT, smallS])?.id).toBe('s');
+  });
+
+  it('finds nothing when no format covers one cell', () => {
+    const onlyA = { ...gridA3(), fallbackTileDefinitionId: 'a' };
+    expect(pickUnitFallback(onlyA, [bigA])).toBeUndefined();
   });
 });

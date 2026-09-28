@@ -372,6 +372,34 @@ describe('fillPolygonWithTileSchema', () => {
     expect(sTop[0]! - (joint / 2 + big.width)).toBeCloseTo(joint, 9);
   });
 
+  it('falls back to a one-cell catalogue format when the declared tile was deleted', () => {
+    // Only the 3x3 a is painted, and the declared fallback no longer exists. A
+    // slightly undersized square in the catalogue still covers one cell.
+    const onlyA = createTileGrid({
+      id: 'onlyA',
+      cell: { x: CELL, y: CELL },
+      extent: { iCount: 3, jCount: 3 },
+      instances: [instance('a', 0, 0, 3, 3)],
+      fallbackTileDefinitionId: 'deleted',
+    });
+    const master = createMasterGrid({
+      id: 'om',
+      childId: onlyA.id,
+      u: { i: 3, j: 0 },
+      v: { i: 0, j: 3 },
+    });
+    const small = createTileDefinition({ id: 's', name: 's', length: CELL - 0.01, width: CELL - 0.01 });
+    const result = fillPolygonWithTileSchema({
+      schema: createTileSchema({ tileGrids: [onlyA], masterGrids: [master], rootMasterGridId: 'om' }),
+      tiles: [tileA, small],
+      boundaries: rectBoundary(CELL * 2, CELL * 2),
+    });
+
+    expect(result.stats.unfilled).toBe(0);
+    expect(result.stats.fallbackSubstitutedFor).toBeUndefined();
+    expect(byTileId(result.placements)).toEqual({ s: 4 });
+  });
+
   it('stands in a unit format when the declared fallback is larger than one cell', () => {
     // A fallback is placed once per cell, so a multi-cell format would be drawn
     // at its real size on a single cell and overlap every neighbour. Declaring
@@ -434,9 +462,11 @@ describe('fillPolygonWithTileSchema', () => {
       rootMasterGridId: master.id,
     });
 
+    // The catalogue holds only the big format: a one-cell tile anywhere in it
+    // would stand in.
     const result = fillPolygonWithTileSchema({
       schema,
-      tiles,
+      tiles: [tileA],
       boundaries: rectBoundary(CELL * 2, CELL * 2),
     });
 

@@ -387,6 +387,51 @@ export function spanOptions(
   return out;
 }
 
+/**
+ * Whether a tile has a 1×1 upright footprint — what a fallback needs, since a clipped format
+ * breaks down into one fallback per cell. An undersized tile counts: up to half a cell short
+ * still rounds to one cell, and it is centred with wider joints.
+ */
+export function coversOneCell(
+  tile: { length: number; width: number },
+  cell: { x: number; y: number },
+  joint: number,
+): boolean {
+  const span = spanFor(tile, cell, joint, false);
+  return span?.iSpan === 1 && span.jSpan === 1;
+}
+
+/**
+ * The tile that actually breaks clipped formats down on this grid.
+ *
+ * The declared fallback when it exists and covers one cell; otherwise a one-cell format the
+ * grid already uses, so the pattern keeps its look; otherwise the one-cell format in the
+ * catalogue closest to the cell. A declared id goes stale when its tile is deleted, and
+ * without this the grid would lose its fallback outright.
+ */
+export function pickUnitFallback<T extends { id: string; length: number; width: number }>(
+  grid: TileGridJson,
+  tiles: readonly T[],
+): T | undefined {
+  const joint = sanitizeJoint(grid.joint);
+  const unit = (tile: T | undefined): tile is T =>
+    tile != null && coversOneCell(tile, grid.cell, joint);
+  const byId = new Map(tiles.map((t) => [t.id, t]));
+
+  const declared = byId.get(grid.fallbackTileDefinitionId);
+  if (unit(declared)) return declared;
+
+  const used = [...new Set(grid.instances.map((i) => i.tileDefinitionId))].map((id) => byId.get(id));
+  const usedUnit = used.find(unit);
+  if (usedUnit) return usedUnit;
+
+  const slack = (tile: T) => {
+    const fit = fitTile(tile, grid.cell, joint, false);
+    return Math.max(fit.slack.x, fit.slack.y);
+  };
+  return tiles.filter(unit).sort((a, b) => slack(a) - slack(b))[0];
+}
+
 /** The joints beside an undersized tile: half the slack next to an exact neighbour, all of it at worst. */
 export function widenedJoint(joint: number, slack: number): { min: number; max: number } {
   const j = sanitizeJoint(joint);
@@ -705,14 +750,15 @@ export type TileGridResize = {
  * the fill does at a boundary — and cells the block grows by take the fallback, so a stack
  * that tiled at 4 columns still tiles at 5. Growth is only filled when the lattice followed
  * and the old block was full: a sheared repeat's blanks are legitimate, and its unchanged
- * lattice keeps it valid as long as nothing is added. Without a one-cell fallback there is
- * nothing to fill with, so cut occurrences are dropped and new cells stay blank.
+ * lattice keeps it valid as long as nothing is added. `fallbackId` is the one-cell tile to
+ * fill with ({@link pickUnitFallback}); without one, cut occurrences are dropped and new
+ * cells stay blank.
  */
 export function setTileGridExtent(
   schema: TileSchemaJson,
   gridId: string,
   extent: { iCount: number; jCount: number },
-  options: { fallbackIsUnit: boolean },
+  options: { fallbackId: string | null },
 ): TileGridResize {
   const grid = findTileGrid(schema, gridId);
   if (!grid) return { schema, lattice: 'unchanged', filled: 0, brokenDown: 0 };
@@ -734,8 +780,8 @@ export function setTileGridExtent(
 
   const inside = (cell: IntVec2) =>
     cell.i >= 0 && cell.j >= 0 && cell.i < extent.iCount && cell.j < extent.jCount;
-  const unit = (cell: IntVec2) =>
-    createTileGridInstance(grid.fallbackTileDefinitionId, cell.i, cell.j);
+  const { fallbackId } = options;
+  const unit = (cell: IntVec2) => createTileGridInstance(fallbackId!, cell.i, cell.j);
 
   const instances: TileGridInstanceJson[] = [];
   let brokenDown = 0;
@@ -743,7 +789,7 @@ export function setTileGridExtent(
     const cells = instanceCells(instance);
     const surviving = cells.filter(inside);
     if (surviving.length === cells.length) instances.push(instance);
-    else if (options.fallbackIsUnit) {
+    else if (fallbackId) {
       instances.push(...surviving.map(unit));
       brokenDown += surviving.length;
     }
@@ -751,7 +797,7 @@ export function setTileGridExtent(
 
   let filled = 0;
   const wasFull = unclaimedCells(grid).length === 0;
-  if (options.fallbackIsUnit && lattice === 'stretched' && wasFull) {
+  if (fallbackId && lattice === 'stretched' && wasFull) {
     for (const cell of extentCells(extent)) {
       if (cell.i < old.iCount && cell.j < old.jCount) continue;
       instances.push(unit(cell));

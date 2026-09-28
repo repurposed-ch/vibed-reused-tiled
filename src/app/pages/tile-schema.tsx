@@ -8,6 +8,7 @@ import {
   bestSpanForDrag,
   blockStep,
   clearTileGrid,
+  coversOneCell,
   createMasterGrid,
   createTileGrid,
   createTileGridInstance,
@@ -22,13 +23,13 @@ import {
   instanceAtCell,
   masterChain,
   overclaimedCells,
+  pickUnitFallback,
   putInstance,
   removeInstanceAt,
   removeRootMasterLevel,
   setLevelExtent,
   setTileGridExtent,
   sanitizeJoint,
-  spanFor,
   spanOptions,
   tileDisplayColor,
   tileGridCells,
@@ -300,16 +301,13 @@ export function TileSchemaPage() {
   }, [tileGrid, tileMap]);
 
   // A fallback is placed one per cell when a larger format is clipped, so it has
-  // to cover exactly one cell. Anything bigger would be drawn at its real size
-  // on a single cell and overlap its neighbours.
-  const coversOneCell = (tile: TileDefinitionJson) => {
-    if (!tileGrid) return false;
-    const span = spanFor(tile, tileGrid.cell, tileGrid.joint, false);
-    return span?.iSpan === 1 && span.jSpan === 1;
-  };
-  const unitTiles = tileGrid ? tiles.filter(coversOneCell) : [];
-  const fallbackTile = tileGrid ? tileMap.get(tileGrid.fallbackTileDefinitionId) : undefined;
-  const fallbackIsUnit = fallbackTile ? coversOneCell(fallbackTile) : false;
+  // to cover exactly one cell — an undersized one counts. The declared one can go
+  // stale when its tile is deleted, so the grid runs on the one the fill would pick.
+  const isUnit = (tile: TileDefinitionJson) =>
+    tileGrid ? coversOneCell(tile, tileGrid.cell, tileGrid.joint) : false;
+  const declaredFallback = tileGrid ? tileMap.get(tileGrid.fallbackTileDefinitionId) : undefined;
+  const declaredIsUnit = declaredFallback ? isUnit(declaredFallback) : false;
+  const fallbackTile = tileGrid ? pickUnitFallback(tileGrid, tiles) : undefined;
 
   const unclaimed = useMemo(() => (tileGrid ? unclaimedCells(tileGrid) : []), [tileGrid]);
   // Blanks are normal in a sheared repeat — a neighbouring copy covers them — so
@@ -588,7 +586,9 @@ export function TileSchemaPage() {
    */
   const resizeGrid = (extent: { iCount: number; jCount: number }) => {
     if (!draft || !tileGrid) return;
-    const result = setTileGridExtent(draft, tileGrid.id, extent, { fallbackIsUnit });
+    const result = setTileGridExtent(draft, tileGrid.id, extent, {
+      fallbackId: fallbackTile?.id ?? null,
+    });
     setDraft(result.schema);
     const fallbackName = fallbackTile?.name ?? 'the fallback';
     const master = result.schema.masterGrids.find((m) => m.childId === tileGrid.id);
@@ -842,8 +842,15 @@ export function TileSchemaPage() {
                     value={tileGrid.fallbackTileDefinitionId}
                     onChange={(e) => patchGrid({ fallbackTileDefinitionId: e.target.value })}
                   >
+                    {/* A stale id matches no option, and the browser would then show the
+                        first tile as selected — so picking that tile would change nothing. */}
+                    {!declaredFallback && (
+                      <option value={tileGrid.fallbackTileDefinitionId} disabled>
+                        — missing tile —
+                      </option>
+                    )}
                     {tiles.map((t) => {
-                      const unit = coversOneCell(t);
+                      const unit = isUnit(t);
                       const fit = fitTile(t, tileGrid.cell, tileGrid.joint, false);
                       return (
                         <option key={t.id} value={t.id} disabled={!unit}>
@@ -903,14 +910,25 @@ export function TileSchemaPage() {
                   </select>
                 </div>
               </div>
-              {!fallbackIsUnit && (
+              {!declaredIsUnit && fallbackTile && (
+                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                  {declaredFallback
+                    ? `${declaredFallback.name} covers more than one cell, so ${fallbackTile.name} stands in for it.`
+                    : `The fallback tile was removed from the catalogue, so ${fallbackTile.name} stands in for it.`}{' '}
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => patchGrid({ fallbackTileDefinitionId: fallbackTile.id })}
+                  >
+                    Use {fallbackTile.name}
+                  </button>
+                </p>
+              )}
+              {!fallbackTile && (
                 <p className="error" style={{ marginTop: '0.5rem' }}>
-                  {fallbackTile
-                    ? `${fallbackTile.name} covers more than one cell, so it cannot break a clipped format down.`
-                    : 'The fallback tile is missing from the catalogue.'}{' '}
-                  {unitTiles.length > 0
-                    ? `Pick a one-cell format — ${unitTiles.map((t) => t.name).join(', ')}.`
-                    : 'No format in the catalogue covers exactly one cell at this cell size, so clipped tiles would leave the boundary bare.'}
+                  No format in the catalogue covers one cell at this cell size, so clipped tiles
+                  would leave the boundary bare. A format up to half a cell smaller than the cell
+                  still counts — it is centred and the joints around it widen.
                 </p>
               )}
               {paintTile && footprints.length === 0 && (

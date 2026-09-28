@@ -10,8 +10,8 @@ import {
 import type { TileDefinitionJson } from '@/domain/tile';
 import {
   fitTileInSpan,
+  pickUnitFallback,
   sanitizeJoint,
-  spanFor,
   toFrame2,
   type IntVec2,
   type TileSchemaJson,
@@ -382,29 +382,13 @@ export function fillPolygonWithTileSchema(input: TileGridFillInput): TileGridFil
    * so the fallback has to be a format that covers exactly one cell. A larger
    * one would be drawn at its real size on a single cell and overlap every
    * neighbour — the schema cannot express that constraint, so it is enforced
-   * here rather than trusted.
+   * here rather than trusted. When the declared one is unusable, or has been
+   * deleted from the catalogue, another one-cell format stands in.
    */
-  const coversOneCell = (tile: TileDefinitionJson): boolean => {
-    const span = spanFor(tile, tileGrid.cell, joint, false);
-    return span?.iSpan === 1 && span.jSpan === 1;
-  };
-
   const declaredFallback = tiles.get(tileGrid.fallbackTileDefinitionId);
-  let fallbackId: string | null = null;
-  let fallbackSubstitutedFor: string | undefined;
-
-  if (declaredFallback && coversOneCell(declaredFallback)) {
-    fallbackId = declaredFallback.id;
-  } else {
-    // Stand in with a unit-sized format the pattern already uses, so a boundary
-    // still gets filled instead of being covered in overlapping tiles.
-    const used = [...new Set(tileGrid.instances.map((i) => i.tileDefinitionId))];
-    const substitute = used
-      .map((id) => tiles.get(id))
-      .find((tile): tile is TileDefinitionJson => tile != null && coversOneCell(tile));
-    fallbackId = substitute?.id ?? null;
-    if (declaredFallback) fallbackSubstitutedFor = declaredFallback.id;
-  }
+  const fallbackId = pickUnitFallback(tileGrid, input.tiles)?.id ?? null;
+  const fallbackSubstitutedFor =
+    declaredFallback && fallbackId !== declaredFallback.id ? declaredFallback.id : undefined;
 
   let wholeTiles = 0;
   let fallbackTiles = 0;
