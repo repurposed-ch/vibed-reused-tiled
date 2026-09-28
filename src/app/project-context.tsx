@@ -8,7 +8,6 @@ import {
   type TileSchemaJson,
   type TilingProjectJson,
 } from '@/domain/project';
-import { bakeInputFromTile, getBakedDataUrl } from '@/render/materials';
 import {
   DEFAULT_LLM_PROVIDER_ID,
   getProvider,
@@ -85,6 +84,14 @@ function loadLlmSettings(): LlmSettings {
   return defaults;
 }
 
+/**
+ * Write the project to localStorage, shedding derived data until it fits.
+ *
+ * Storage is capped at a few MB. A large solved instance can exceed the cap on its own;
+ * it is dropped first, since `AutoSolve` rebuilds it after reload. If even that fails,
+ * the project lives in memory only — a full disk must not take down the provider,
+ * because this runs inside a state updater.
+ */
 function persist(project: TilingProjectJson) {
   const next = {
     ...project,
@@ -93,7 +100,16 @@ function persist(project: TilingProjectJson) {
       updatedAt: new Date().toISOString(),
     },
   };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  const attempts = [next, { ...next, instance: undefined }];
+  for (const attempt of attempts) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(attempt));
+      return next;
+    } catch {
+      /* try a smaller form */
+    }
+  }
+  console.warn('Project is too large for localStorage; recent changes will not survive a reload.');
   return next;
 }
 
@@ -122,21 +138,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [updateProject]);
 
   const downloadProject = useCallback(() => {
-    const materialMap = new Map(project.materials.map((m) => [m.id, m]));
-    const withTextures: TilingProjectJson = {
-      ...project,
-      tileDefinitions: project.tileDefinitions.map((tile) => {
-        const material = materialMap.get(tile.materialId);
-        if (!material) return tile;
-        try {
-          const texture = getBakedDataUrl(bakeInputFromTile(tile, material));
-          return { ...tile, texture };
-        } catch {
-          return tile;
-        }
-      }),
-    };
-    const blob = new Blob([projectToJsonString(withTextures)], { type: 'application/json' });
+    const blob = new Blob([projectToJsonString(project)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

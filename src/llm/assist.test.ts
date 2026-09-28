@@ -98,16 +98,6 @@ describe('assistTileSchemaWith', () => {
     expect(result.schema.tileGrids[0]!.extent).toEqual({ iCount: 4, jCount: 4 });
   });
 
-  it('never sends a baked texture', async () => {
-    const heavy = { ...unit, texture: `data:image/png;base64,${'A'.repeat(50_000)}` };
-    const { call, prompts } = transport([GOOD]);
-    await assistTileSchemaWith(call, {
-      request: { prompt: 'x', tileDefinitions: [large, heavy].map((t) => ({ ...t, texture: undefined })) },
-    });
-    expect(prompts[0]).not.toContain('data:image');
-    expect(prompts[0]!.length).toBeLessThan(4000);
-  });
-
   it('does not offer a one-cell grid as a worked example', async () => {
     // Its single-letter row is what collides with the next block's header when a
     // model echoes it, and it demonstrates nothing.

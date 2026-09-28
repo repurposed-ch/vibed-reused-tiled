@@ -539,9 +539,9 @@ export function groutMaterial(): MaterialDefinitionJson {
     name: 'grout',
     seed: 19,
     sdf: groutSdf,
-    // matte and nearly flat: the joint's recess, not its texture, makes it read
-    relief: 0.0003,
-    roughness: [0.95, 0.85],
+    // from a hand-tuned project: the bright cells sink slightly, with a satin sheen
+    relief: -0.00105,
+    roughness: [0.48, 0.48],
   });
 }
 

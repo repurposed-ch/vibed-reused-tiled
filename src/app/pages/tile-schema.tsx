@@ -502,9 +502,7 @@ export function TileSchemaPage() {
         apiKey: llmSettings.apiKey || undefined,
         request: {
           prompt: ui.schemaPrompt,
-          // Textures are stripped: a baked data URL runs to megabytes, says
-          // nothing about where a tile goes, and would swamp a small model.
-          tileDefinitions: tiles.map((t) => ({ ...t, texture: undefined })),
+          tileDefinitions: tiles,
           current: ui.schemaNotation || undefined,
           joint: newJoint,
         },

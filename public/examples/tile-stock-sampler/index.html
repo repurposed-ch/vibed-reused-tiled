@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tile Stock Image Sampler</title>
+    <meta
+      name="description"
+      content="Counting reused tiles by colour from a photo. An example project by Harrison Hildebrandt for Vibed · Reused · Tiled."
+    />
+    <meta name="color-scheme" content="dark" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Fragment+Mono&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg0: #1a1714;
+        --bg1: #241f1a;
+        --bg2: #2e2822;
+        --ink: #f3ebe1;
+        --muted: #b5a89a;
+        --line: #4a4036;
+        --accent: #d9773a;
+        --font: 'DM Sans', system-ui, sans-serif;
+        --mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        --max: 1120px;
+        color: var(--ink);
+        font-family: var(--font);
+        line-height: 1.5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+      }
+
+      body {
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #3a2a1f 0%, transparent 55%),
+          var(--bg0);
+        overflow-x: clip;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 1rem;
+      }
+
+      .top {
+        border-bottom: 1px solid var(--line);
+        background: var(--bg1);
+      }
+
+      .top .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 3.5rem;
+      }
+
+      .back {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.9rem;
+        padding: 0.5rem 0;
+      }
+
+      .back:hover {
+        color: var(--ink);
+      }
+
+      .top .tag {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        padding: 0.2rem 0.45rem;
+        white-space: nowrap;
+      }
+
+      header.intro {
+        padding: 2.5rem 0 1.5rem;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.6rem;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 0 0 0.4rem;
+        font-size: clamp(1.8rem, 5vw, 2.8rem);
+        font-weight: 600;
+        line-height: 1.1;
+      }
+
+      .by {
+        margin: 0 0 1.25rem;
+        color: var(--muted);
+      }
+
+      .by strong {
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      .lede {
+        margin: 0 0 0.75rem;
+        color: var(--muted);
+        max-width: 44rem;
+      }
+
+      .pipeline {
+        list-style: none;
+        margin: 1.25rem 0 0;
+        padding: 0;
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      }
+
+      .pipeline li {
+        border: 1px solid var(--line);
+        background: var(--bg1);
+        padding: 0.75rem 0.85rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+
+      .pipeline b {
+        display: block;
+        color: var(--ink);
+        font-weight: 500;
+        font-size: 0.92rem;
+        margin-bottom: 0.15rem;
+      }
+
+      .pipeline .n {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--accent);
+        margin-right: 0.35rem;
+      }
+
+      section {
+        border-top: 1px solid var(--line);
+        padding: 2rem 0;
+      }
+
+      h2 {
+        margin: 0 0 1rem;
+        font-size: 1.3rem;
+        font-weight: 600;
+      }
+
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .tab {
+        appearance: none;
+        font: inherit;
+        color: var(--muted);
+        background: var(--bg1);
+        border: 1px solid var(--line);
+        padding: 0.55rem 0.9rem;
+        min-height: 44px;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .tab small {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+      }
+
+      .tab[aria-selected='true'] {
+        color: var(--ink);
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 18%, var(--bg1));
+      }
+
+      .run {
+        display: grid;
+        gap: 1.25rem;
+      }
+
+      @media (min-width: 900px) {
+        .run {
+          grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+          align-items: start;
+        }
+      }
+
+      .viewer {
+        margin: 0;
+        border: 1px solid var(--line);
+        background: var(--bg2);
+        padding: 0.5rem;
+      }
+
+      .stage {
+        position: relative;
+        line-height: 0;
+      }
+
+      .stage img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .stage svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .stage rect {
+        fill: transparent;
+        stroke: #fff8ee;
+        stroke-width: 2;
+        vector-effect: non-scaling-stroke;
+        cursor: crosshair;
+        transition: fill 0.1s ease;
+      }
+
+      .stage rect.halo {
+        stroke: #000;
+        stroke-width: 5;
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      .stage rect.hit:hover,
+      .stage rect.hit.on {
+        fill: rgba(255, 255, 255, 0.3);
+        stroke: var(--accent);
+        stroke-width: 3;
+      }
+
+      .stage.dim rect.hit:not(.on),
+      .stage.dim rect.halo:not(.on) {
+        opacity: 0.12;
+      }
+
+      .viewer-bar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        color: var(--muted);
+        line-height: 1.4;
+        min-height: 2.2rem;
+      }
+
+      .viewer-bar label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+      }
+
+      .readout {
+        color: var(--ink);
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--bg1);
+        padding: 1rem;
+      }
+
+      .total {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        margin: 0 0 0.25rem;
+      }
+
+      .total strong {
+        font-size: 2.2rem;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .total span {
+        color: var(--muted);
+      }
+
+      .params {
+        margin: 0 0 1rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .bars {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.2rem;
+      }
+
+      .bars button {
+        appearance: none;
+        font: inherit;
+        color: var(--ink);
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1rem minmax(5.5rem, auto) 1fr 2rem;
+        align-items: center;
+        gap: 0.55rem;
+        background: transparent;
+        border: 1px solid transparent;
+        padding: 0.35rem 0.4rem;
+        cursor: pointer;
+        text-align: left;
+        font-size: 0.88rem;
+      }
+
+      .bars button:hover,
+      .bars button[aria-pressed='true'] {
+        border-color: var(--line);
+        background: var(--bg2);
+      }
+
+      .bars button[aria-pressed='true'] {
+        border-color: var(--accent);
+      }
+
+      .sw {
+        width: 1rem;
+        height: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+      }
+
+      .track {
+        height: 0.5rem;
+        background: var(--bg0);
+        position: relative;
+      }
+
+      .fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: var(--muted);
+      }
+
+      .cnt {
+        font-family: var(--mono);
+        text-align: right;
+      }
+
+      .note {
+        margin: 1rem 0 0;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      details {
+        margin-top: 1.25rem;
+        border: 1px solid var(--line);
+        background: var(--bg1);
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 0.75rem 1rem;
+        font-weight: 500;
+        min-height: 44px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        max-height: 26rem;
+        overflow-y: auto;
+        border-top: 1px solid var(--line);
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        white-space: nowrap;
+      }
+
+      th,
+      td {
+        padding: 0.35rem 0.6rem;
+        text-align: right;
+        border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--bg2);
+        color: var(--muted);
+        font-weight: 400;
+      }
+
+      th:nth-child(2),
+      td:nth-child(2) {
+        text-align: left;
+      }
+
+      tbody tr:hover,
+      tbody tr.on {
+        background: var(--bg2);
+      }
+
+      td .sw {
+        display: inline-block;
+        vertical-align: -0.15rem;
+        margin-right: 0.4rem;
+        width: 0.8rem;
+        height: 0.8rem;
+      }
+
+      .files {
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+        margin-bottom: 1.25rem;
+      }
+
+      .files a {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        border: 1px solid var(--line);
+        background: var(--bg1);
+        padding: 0.7rem 0.85rem;
+        text-decoration: none;
+      }
+
+      .files a:hover {
+        border-color: var(--accent);
+      }
+
+      .files .fn {
+        font-family: var(--mono);
+        font-size: 0.82rem;
+      }
+
+      .files .fd {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      pre {
+        margin: 0;
+        padding: 0.9rem 1rem;
+        background: var(--bg1);
+        border: 1px solid var(--line);
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        line-height: 1.6;
+      }
+
+      pre .c {
+        color: var(--muted);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 1.5rem 0 2.5rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .error {
+        color: #e8927c;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <div class="wrap">
+        <a class="back" href="../../">← Vibed · Reused · Tiled</a>
+        <span class="tag">Example project</span>
+      </div>
+    </div>
+
+    <main class="wrap">
+      <header class="intro">
+        <p class="eyebrow">Tile stock · Image sampler</p>
+        <h1>Tile Stock Image Sampler</h1>
+        <p class="by">by <strong>Harrison Hildebrandt</strong></p>
+        <p class="lede">
+          Reuse starts with knowing what is in the pile. This small Python tool takes a photo of
+          tiles, finds every tile-shaped region, names its colour and writes one CSV row per tile.
+          The result is a rough stock count you can feed into a tiling design.
+        </p>
+        <ol class="pipeline">
+          <li><b><span class="n">01</span>Cluster colours</b>K-means on a downscaled copy, then every full-size pixel joins its nearest cluster.</li>
+          <li><b><span class="n">02</span>Cut on grout</b>Canny edges are dilated into a barrier so neighbouring tiles do not merge.</li>
+          <li><b><span class="n">03</span>Find regions</b>Connected components per colour, filtered by minimum area, size and rectangularity.</li>
+          <li><b><span class="n">04</span>Name and export</b>Each region's mean colour snaps to a small palette and is written to CSV.</li>
+        </ol>
+      </header>
+
+      <section aria-labelledby="results-h">
+        <h2 id="results-h">Results</h2>
+        <div class="tabs" role="tablist" aria-label="Sample runs" id="tabs"></div>
+        <div class="run">
+          <figure class="viewer">
+            <div class="stage" id="stage">
+              <img id="photo" alt="" />
+              <svg id="overlay" aria-hidden="true"></svg>
+            </div>
+            <figcaption class="viewer-bar">
+              <span class="readout" id="readout">Hover a tile to see what was detected.</span>
+              <label><input type="checkbox" id="toggle" checked /> Show detections</label>
+            </figcaption>
+          </figure>
+
+          <aside class="panel" aria-live="polite">
+            <p class="total"><strong id="total">–</strong><span>tiles detected</span></p>
+            <p class="params" id="params"></p>
+            <ul class="bars" id="bars"></ul>
+            <p class="note">
+              Colour names come from the script's fixed eight-colour palette, so a tile can get a
+              nearby name. Swatches use the measured mean colour. Click a colour to highlight its tiles.
+            </p>
+          </aside>
+        </div>
+
+        <details>
+          <summary id="table-summary">Full results table</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>id</th>
+                  <th>colour</th>
+                  <th>x</th>
+                  <th>y</th>
+                  <th>w</th>
+                  <th>h</th>
+                  <th>area px</th>
+                  <th>mean RGB</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <section aria-labelledby="files-h">
+        <h2 id="files-h">Files and how to run it</h2>
+        <div class="files">
+          <a href="tile-stock-sampler.zip" download><span class="fn">tile-stock-sampler.zip</span><span class="fd">Everything below in one archive</span></a>
+          <a href="tile_counter.py" download><span class="fn">tile_counter.py</span><span class="fd">Settings for large tiles in a photo</span></a>
+          <a href="tile_counter2.py" download><span class="fn">tile_counter2.py</span><span class="fd">Settings for many small tiles</span></a>
+          <a href="tile_counts.csv" download><span class="fn">tile_counts.csv</span><span class="fd">Results for sample 1</span></a>
+          <a href="tile_counts2.csv" download><span class="fn">tile_counts2.csv</span><span class="fd">Results for sample 2</span></a>
+          <a href="source_image.jpg" download><span class="fn">source_image.jpg</span><span class="fd">Full-resolution photo for sample 1</span></a>
+        </div>
+        <pre><span class="c"># Python 3 with OpenCV, NumPy and pandas</span>
+pip install opencv-python numpy pandas
+
+<span class="c"># Writes tile_results/tile_counts.csv and prints a count per colour</span>
+python tile_counter.py source_image.jpg</pre>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        Tile Stock Image Sampler by Harrison Hildebrandt. Part of the
+        <a href="../../">Vibed · Reused · Tiled</a> DMS 2026 hackathon.
+      </div>
+    </footer>
+
+    <script>
+      const RUNS = [
+        {
+          id: 'photo',
+          label: 'Sample 1: photo',
+          sub: 'large tiles · min area 5000 px',
+          img: 'source_image.web.jpg',
+          csv: 'tile_counts.csv',
+          alt: 'Photo of a grid of reused ceramic tiles in mixed colours',
+          params: 'k = 9 · min_area = 5000 px · min side 40 px · rectangularity ≥ 0.55',
+        },
+        {
+          id: 'pattern',
+          label: 'Sample 2: pattern',
+          sub: 'small tiles · min area 100 px',
+          img: 'source_image2.jpg',
+          csv: 'tile_counts2.csv',
+          alt: 'Flat render of an orange and green rectangular tile pattern',
+          params: 'k = 9 · min_area = 100 px · min side 10 px · rectangularity ≥ 0.55',
+        },
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const NS = 'http://www.w3.org/2000/svg';
+      const cache = new Map();
+      let current = null;
+      let focusColor = null;
+
+      function parseCsv(text) {
+        const [head, ...lines] = text.trim().split(/\r?\n/);
+        const keys = head.split(',');
+        return lines.map((line) => {
+          const cells = line.split(',');
+          const row = {};
+          keys.forEach((k, i) => {
+            const v = cells[i];
+            row[k] = k === 'color' ? v : Number(v);
+          });
+          row.rgb = `rgb(${Math.round(row.mean_R)}, ${Math.round(row.mean_G)}, ${Math.round(row.mean_B)})`;
+          return row;
+        });
+      }
+
+      async function loadRun(run) {
+        if (!cache.has(run.id)) {
+          const res = await fetch(run.csv);
+          if (!res.ok) throw new Error(`${run.csv}: HTTP ${res.status}`);
+          cache.set(run.id, parseCsv(await res.text()));
+        }
+        return cache.get(run.id);
+      }
+
+      function el(tag, attrs = {}, ns) {
+        const node = ns ? document.createElementNS(ns, tag) : document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+        return node;
+      }
+
+      function describe(t) {
+        return `#${t.tile_id} · ${t.color} · ${t.width}×${t.height} px at (${t.x}, ${t.y})`;
+      }
+
+      function highlight(ids) {
+        const set = new Set(ids);
+        document.querySelectorAll('#overlay rect').forEach((r) => {
+          r.classList.toggle('on', set.has(Number(r.dataset.id)));
+        });
+        document.querySelectorAll('#rows tr').forEach((tr) => {
+          tr.classList.toggle('on', set.has(Number(tr.dataset.id)));
+        });
+      }
+
+      function applyFocus(tiles) {
+        const stage = $('stage');
+        document.querySelectorAll('#bars button').forEach((b) => {
+          b.setAttribute('aria-pressed', String(b.dataset.color === focusColor));
+        });
+        if (focusColor) {
+          stage.classList.add('dim');
+          const ids = tiles.filter((t) => t.color === focusColor).map((t) => t.tile_id);
+          highlight(ids);
+          $('readout').textContent = `${ids.length} × ${focusColor}`;
+        } else {
+          stage.classList.remove('dim');
+          highlight([]);
+          $('readout').textContent = 'Hover a tile to see what was detected.';
+        }
+      }
+
+      function renderOverlay(run, tiles, w, h) {
+        const svg = $('overlay');
+        svg.replaceChildren();
+        svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+        for (const t of tiles) {
+          const box = { x: t.x, y: t.y, width: t.width, height: t.height, 'data-id': t.tile_id };
+          svg.append(el('rect', { ...box, class: 'halo' }, NS));
+          const hit = el('rect', { ...box, class: 'hit' }, NS);
+          const title = el('title', {}, NS);
+          title.textContent = describe(t);
+          hit.append(title);
+          hit.addEventListener('mouseenter', () => {
+            $('readout').textContent = describe(t);
+            if (!focusColor) highlight([t.tile_id]);
+          });
+          hit.addEventListener('mouseleave', () => applyFocus(tiles));
+          svg.append(hit);
+        }
+        svg.style.display = $('toggle').checked ? '' : 'none';
+      }
+
+      function renderSummary(run, tiles) {
+        $('total').textContent = tiles.length;
+        $('params').textContent = run.params;
+
+        const groups = new Map();
+        for (const t of tiles) {
+          const g = groups.get(t.color) ?? { n: 0, r: 0, g: 0, b: 0 };
+          g.n += 1;
+          g.r += t.mean_R;
+          g.g += t.mean_G;
+          g.b += t.mean_B;
+          groups.set(t.color, g);
+        }
+        const sorted = [...groups.entries()].sort((a, b) => b[1].n - a[1].n);
+        const max = sorted[0]?.[1].n ?? 1;
+
+        $('bars').replaceChildren(
+          ...sorted.map(([name, g]) => {
+            const rgb = `rgb(${Math.round(g.r / g.n)}, ${Math.round(g.g / g.n)}, ${Math.round(g.b / g.n)})`;
+            const li = el('li');
+            const btn = el('button', { type: 'button', 'data-color': name, 'aria-pressed': 'false' });
+            btn.title = `Highlight ${name} tiles`;
+            const sw = el('span', { class: 'sw' });
+            sw.style.background = rgb;
+            const label = el('span');
+            label.textContent = name;
+            const track = el('span', { class: 'track' });
+            const fill = el('span', { class: 'fill' });
+            fill.style.width = `${(g.n / max) * 100}%`;
+            fill.style.background = rgb;
+            track.append(fill);
+            const cnt = el('span', { class: 'cnt' });
+            cnt.textContent = g.n;
+            btn.append(sw, label, track, cnt);
+            btn.addEventListener('click', () => {
+              focusColor = focusColor === name ? null : name;
+              applyFocus(tiles);
+            });
+            li.append(btn);
+            return li;
+          }),
+        );
+      }
+
+      function renderTable(tiles) {
+        $('table-summary').textContent = `Full results table (${tiles.length} rows)`;
+        $('rows').replaceChildren(
+          ...tiles.map((t) => {
+            const tr = el('tr', { 'data-id': t.tile_id });
+            const sw = `<span class="sw" style="background:${t.rgb}"></span>`;
+            tr.innerHTML = `<td>${t.tile_id}</td><td>${sw}${t.color}</td><td>${t.x}</td><td>${t.y}</td><td>${t.width}</td><td>${t.height}</td><td>${t.area_px}</td><td>${Math.round(t.mean_R)} ${Math.round(t.mean_G)} ${Math.round(t.mean_B)}</td>`;
+            tr.addEventListener('mouseenter', () => {
+              $('readout').textContent = describe(t);
+              highlight([t.tile_id]);
+            });
+            tr.addEventListener('mouseleave', () => applyFocus(tiles));
+            return tr;
+          }),
+        );
+      }
+
+      async function show(run) {
+        current = run.id;
+        focusColor = null;
+        document.querySelectorAll('.tab').forEach((b) => {
+          b.setAttribute('aria-selected', String(b.dataset.id === run.id));
+          b.tabIndex = b.dataset.id === run.id ? 0 : -1;
+        });
+
+        const photo = $('photo');
+        photo.alt = run.alt;
+        const loaded = new Promise((resolve, reject) => {
+          photo.onload = resolve;
+          photo.onerror = () => reject(new Error(`${run.img} failed to load`));
+        });
+        photo.src = run.img;
+
+        try {
+          const [tiles] = await Promise.all([loadRun(run), loaded]);
+          if (current !== run.id) return;
+          renderOverlay(run, tiles, photo.naturalWidth, photo.naturalHeight);
+          renderSummary(run, tiles);
+          renderTable(tiles);
+          applyFocus(tiles);
+        } catch (err) {
+          $('readout').innerHTML = `<span class="error">Could not load this sample: ${err.message}</span>`;
+        }
+      }
+
+      const tabs = $('tabs');
+      RUNS.forEach((run, i) => {
+        const b = el('button', { type: 'button', role: 'tab', class: 'tab', 'data-id': run.id });
+        b.innerHTML = `${run.label}<small>${run.sub}</small>`;
+        b.addEventListener('click', () => show(run));
+        b.addEventListener('keydown', (e) => {
+          if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+          const next = RUNS[(i + (e.key === 'ArrowRight' ? 1 : RUNS.length - 1)) % RUNS.length];
+          show(next);
+          tabs.querySelector(`[data-id="${next.id}"]`).focus();
+        });
+        tabs.append(b);
+      });
+
+      $('toggle').addEventListener('change', (e) => {
+        $('overlay').style.display = e.target.checked ? '' : 'none';
+      });
+
+      show(RUNS[0]);
+    </script>
+  </body>
+</html>

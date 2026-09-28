@@ -33,17 +33,6 @@ describe('solveSignature', () => {
     expect(solveSignature(solved, 1)).toBe(solveSignature(project, 1));
   });
 
-  it('ignores a baked texture, which does not move a tile', () => {
-    const project = baseProject();
-    const baked: TilingProjectJson = {
-      ...project,
-      tileDefinitions: project.tileDefinitions.map((t, i) =>
-        i === 0 ? { ...t, texture: 'data:image/png;base64,AAAA' } : t,
-      ),
-    };
-    expect(solveSignature(baked, 1)).toBe(solveSignature(project, 1));
-  });
-
   it('changes for every input the solver actually reads', () => {
     const project = baseProject();
     const base = solveSignature(project, 1);
@@ -78,9 +67,10 @@ describe('solveSignature', () => {
     expect(solveSignature(moved, 1)).not.toBe(base);
 
     // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
-    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
-    // over all of them has no module to find.
-    const rapportTiles = project.tileDefinitions.slice(0, 2);
+    // 600 and 125 mm squares, which share only a 25 mm unit with the 200 mm formats.
+    const rapportTiles = project.tileDefinitions.filter((t) =>
+      ['Square 200', 'Slab 200 x 300'].includes(t.name),
+    );
     const module = findRapportModule({
       tiles: rapportTiles,
       targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
@@ -99,15 +89,16 @@ describe('solveSignature', () => {
 
 describe('estimateSolveCells', () => {
   it('is zero without a tile schema, since only the grid path scans cells', () => {
-    expect(estimateSolveCells(baseProject())).toBe(0);
+    expect(estimateSolveCells({ ...baseProject(), tileSchema: undefined })).toBe(0);
   });
 
   it('scales with boundary area over cell size', () => {
     const project = baseProject();
     // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
-    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
-    // over all of them has no module to find.
-    const rapportTiles = project.tileDefinitions.slice(0, 2);
+    // 600 and 125 mm squares, which share only a 25 mm unit with the 200 mm formats.
+    const rapportTiles = project.tileDefinitions.filter((t) =>
+      ['Square 200', 'Slab 200 x 300'].includes(t.name),
+    );
     const module = findRapportModule({
       tiles: rapportTiles,
       targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),

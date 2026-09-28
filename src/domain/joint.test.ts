@@ -78,6 +78,7 @@ describe('removeMaterial', () => {
   it('repoints tiles and the joint to the first remaining material', () => {
     const project = createDefaultProject();
     project.tileDefinitions[0] = { ...project.tileDefinitions[0]!, materialId: GROUT_MATERIAL_ID };
+    project.joint = { ...project.joint, materialId: GROUT_MATERIAL_ID };
     const next = removeMaterial(project, GROUT_MATERIAL_ID);
     const fallback = next.materials[0]!.id;
     expect(next.materials.some((m) => m.id === GROUT_MATERIAL_ID)).toBe(false);

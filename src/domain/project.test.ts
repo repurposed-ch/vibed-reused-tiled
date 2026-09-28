@@ -209,6 +209,33 @@ describe('workflow', () => {
 });
 
 describe('tile schema persistence', () => {
+  it('ships a default tile schema that fills the default boundary', () => {
+    const project = createDefaultProject();
+    const schema = project.tileSchema!;
+    expect(schema).toBeDefined();
+
+    // Every tile the schema names, fallback included, is one the project defines.
+    const ids = new Set(project.tileDefinitions.map((t) => t.id));
+    for (const grid of schema.tileGrids) {
+      expect(ids.has(grid.fallbackTileDefinitionId)).toBe(true);
+      expect(grid.instances.every((i) => ids.has(i.tileDefinitionId))).toBe(true);
+    }
+    expect(() => resolveSchema(schema)).not.toThrow();
+
+    const instance = solveLayout({
+      tileDefinitions: project.tileDefinitions,
+      designFamily: project.designFamily,
+      boundaries: project.boundaries,
+      sampledStock: sampleStock(project.stock, mulberry32(7)),
+      seed: 7,
+      tileSchema: schema,
+    });
+    const stats = instance.meta?.solverStats;
+    expect(instance.placements.length).toBeGreaterThan(0);
+    expect(stats?.stockShortfall).toBe(0);
+    expect(stats?.oversizedTiles).toBe(0);
+  });
+
   it('migrates a v3 project forward and leaves it without a tile schema', () => {
     const v3 = { ...createDefaultProject(), schemaVersion: 3, tileSchema: undefined };
     const migrated = parseTilingProject(JSON.parse(JSON.stringify(v3)) as unknown);
@@ -219,9 +246,11 @@ describe('tile schema persistence', () => {
   it('round-trips a tile schema through the project document', () => {
     const project = createDefaultProject();
     // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
-    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
-    // over all of them has no module to find.
-    const rapportTiles = project.tileDefinitions.slice(0, 2);
+    // 600 and 125 mm squares, which share only a 25 mm unit with the 200 mm formats.
+    const rapportTiles = project.tileDefinitions.filter((t) =>
+      ['Square 200', 'Slab 200 x 300'].includes(t.name),
+    );
+    expect(rapportTiles).toHaveLength(2);
     const module = findRapportModule({
       tiles: rapportTiles,
       targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),
@@ -243,9 +272,11 @@ describe('tile schema persistence', () => {
   it('solves from the tile schema when the project carries one', () => {
     const project = createDefaultProject();
     // Two formats that share a 0.1 m unit. Not every tile in the sample project: it also ships
-    // a 620 mm square, which shares only a 20 mm unit with the 200 mm formats, and a rapport
-    // over all of them has no module to find.
-    const rapportTiles = project.tileDefinitions.slice(0, 2);
+    // 600 and 125 mm squares, which share only a 25 mm unit with the 200 mm formats.
+    const rapportTiles = project.tileDefinitions.filter((t) =>
+      ['Square 200', 'Slab 200 x 300'].includes(t.name),
+    );
+    expect(rapportTiles).toHaveLength(2);
     const module = findRapportModule({
       tiles: rapportTiles,
       targets: rapportTiles.map((t) => ({ tileDefinitionId: t.id, areaShare: 50 })),

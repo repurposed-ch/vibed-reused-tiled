@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fliesen-Verlegemuster Generator</title>
+<style>
+  :root {
+    --bg: #1c1b19;
+    --panel: #26241f;
+    --line: #3a3730;
+    --text: #ece7dc;
+    --text-dim: #a39d8c;
+    --accent: #c98a3e;
+    --grout: #0f0e0c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 1.3rem; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 24px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 0.78rem; color: var(--text-dim); margin-bottom: 6px; }
+  select, input[type="number"] {
+    width: 100%;
+    background: #17160f;
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.88rem;
+  }
+  .dims { display: flex; gap: 10px; }
+  .dims > .field { flex: 1; }
+  .format-row {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .row-head label { margin: 0; }
+  input[type="color"] {
+    width: 30px; height: 24px; padding: 0;
+    border: 1px solid var(--line); border-radius: 4px;
+    background: none; cursor: pointer;
+  }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .pct-val { font-variant-numeric: tabular-nums; font-size: 0.85rem; width: 46px; text-align: right; color: var(--text-dim); }
+  .divider { height: 1px; background: var(--line); margin: 16px 0; }
+  .opt-line { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: var(--text-dim); margin-bottom: 10px; }
+  .opt-line input[type="checkbox"] { accent-color: var(--accent); }
+  .opt-line input[type="color"] { margin-left: auto; }
+  .quick { display: flex; gap: 6px; margin-top: 8px; }
+  .quick button {
+    flex: 1; padding: 5px 0; font-size: 0.74rem;
+    background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 5px;
+  }
+  .quick button:hover { border-color: var(--accent); color: var(--text); }
+  button {
+    width: 100%; border: none; border-radius: 6px;
+    padding: 11px; font-size: 0.9rem; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #1c1b19; font-weight: 600; margin-bottom: 8px; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-ghost { background: none; border: 1px solid var(--line); color: var(--text-dim); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+  .btn-dashed { background: none; border: 1px dashed var(--line); color: var(--text-dim); font-size: 0.8rem; padding: 8px; margin-bottom: 12px; }
+  .btn-dashed:hover { border-color: var(--accent); color: var(--text); }
+  .note { font-size: 0.72rem; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
+  .canvas-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  svg { width: 100%; height: auto; display: block; background: var(--grout); border-radius: 4px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 16px; font-size: 0.82rem; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-item .sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .legend-num { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .info-block { width: 100%; font-size: 0.78rem; color: var(--text-dim); line-height: 1.6; margin-top: 4px; }
+  .empty-hint { color: var(--text-dim); font-size: 0.85rem; padding: 60px 0; text-align: center; }
+  .warn { color: #d9915a; }
+</style>
+</head>
+<body>
+
+<h1>Fliesen-Verlegemuster</h1>
+<p class="sub">Fläche mit 2–3 Formaten nach Flächenanteil belegen — mit Spiegelung und Modulversatz.</p>
+
+<div class="layout">
+  <div class="panel">
+    <div class="dims field">
+      <div class="field" style="margin:0">
+        <label>Fläche Breite (cm)</label>
+        <input type="number" id="roomW" value="400" min="20" step="5">
+      </div>
+      <div class="field" style="margin:0">
+        <label>Fläche Höhe (cm)</label>
+        <input type="number" id="roomH" value="300" min="20" step="5">
+      </div>
+    </div>
+
+    <div id="formatRows"></div>
+    <button class="btn-dashed" id="toggleThird">+ Drittes Format hinzufügen</button>
+
+    <div class="divider"></div>
+
+    <div class="opt-line">
+      <input type="checkbox" id="mirrorX">
+      <span>In X spiegeln</span>
+    </div>
+    <div class="opt-line">
+      <input type="checkbox" id="mirrorY">
+      <span>In Y spiegeln</span>
+    </div>
+
+    <div class="field">
+      <label>Modulversatz</label>
+      <select id="shiftMode">
+        <option value="none">kein Versatz</option>
+        <option value="h">horizontal, je Modulreihe</option>
+        <option value="v">vertikal, je Modulspalte</option>
+      </select>
+      <div class="slider-row">
+        <input type="range" id="shiftPct" min="0" max="100" value="50" step="1" disabled>
+        <span class="pct-val" id="shiftVal">50 %</span>
+      </div>
+      <div class="quick">
+        <button data-shift="25">¼</button>
+        <button data-shift="33">⅓</button>
+        <button data-shift="50">½</button>
+        <button data-shift="67">⅔</button>
+      </div>
+    </div>
+
+    <div class="opt-line">
+      <input type="checkbox" id="showRapport" checked>
+      <span>Einen Rapport umranden</span>
+      <input type="color" id="rapportColor" value="#ff4d4d">
+    </div>
+    <div class="opt-line">
+      <input type="checkbox" id="showGrout" checked>
+      <span>Fugen darstellen</span>
+    </div>
+
+    <button class="btn-primary" id="generateBtn">Muster erzeugen</button>
+    <button class="btn-ghost" id="rerollBtn">Andere Modulvariante</button>
+    <p class="note" id="statusNote"></p>
+  </div>
+
+  <div class="canvas-wrap">
+    <div id="canvasHost"><div class="empty-hint">Formate wählen, Anteile einstellen und „Muster erzeugen“ klicken.</div></div>
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<script>
+const STANDARD_FORMATS = [
+  { label: "7,5 × 7,5 cm", w: 75, h: 75 },
+  { label: "7,5 × 15 cm (Riemchen)", w: 75, h: 150 },
+  { label: "10 × 10 cm", w: 100, h: 100 },
+  { label: "10 × 20 cm", w: 100, h: 200 },
+  { label: "15 × 15 cm", w: 150, h: 150 },
+  { label: "15 × 30 cm", w: 150, h: 300 },
+  { label: "20 × 20 cm", w: 200, h: 200 },
+  { label: "20 × 40 cm", w: 200, h: 400 },
+  { label: "25 × 25 cm", w: 250, h: 250 },
+  { label: "25 × 50 cm", w: 250, h: 500 },
+  { label: "30 × 30 cm", w: 300, h: 300 },
+  { label: "30 × 60 cm", w: 300, h: 600 },
+  { label: "40 × 40 cm", w: 400, h: 400 },
+  { label: "45 × 45 cm", w: 450, h: 450 },
+  { label: "45 × 90 cm", w: 450, h: 900 },
+  { label: "50 × 50 cm", w: 500, h: 500 },
+  { label: "60 × 60 cm", w: 600, h: 600 },
+  { label: "60 × 90 cm", w: 600, h: 900 },
+  { label: "60 × 120 cm", w: 600, h: 1200 },
+  { label: "75 × 75 cm", w: 750, h: 750 },
+  { label: "80 × 80 cm", w: 800, h: 800 },
+  { label: "90 × 90 cm", w: 900, h: 900 },
+  { label: "100 × 100 cm", w: 1000, h: 1000 },
+  { label: "120 × 120 cm", w: 1200, h: 1200 },
+];
+
+const DEFAULT_COLORS = ["#c98a3e", "#5b8a72", "#7c6fa3"];
+const DEFAULT_PCT = [60, 40, 20];
+const DEFAULT_FMT = [10, 5, 4];
+
+let thirdActive = false;
+let seedOffset = 0;
+let lastResult = null;
+
+/* ---------- UI ---------- */
+
+function buildFormatRow(i) {
+  const div = document.createElement("div");
+  div.className = "format-row";
+  div.innerHTML = `
+    <div class="row-head">
+      <label>Format ${i + 1}</label>
+      <input type="color" class="fmt-color" value="${DEFAULT_COLORS[i]}">
+    </div>
+    <select class="fmt-select">
+      ${STANDARD_FORMATS.map((f, k) => `<option value="${k}" ${k === DEFAULT_FMT[i] ? "selected" : ""}>${f.label}</option>`).join("")}
+    </select>
+    <div class="slider-row">
+      <input type="range" class="pct-slider" min="0" max="100" value="${DEFAULT_PCT[i]}">
+      <span class="pct-val">${DEFAULT_PCT[i]} %</span>
+    </div>`;
+  return div;
+}
+
+function attachSliders() {
+  document.querySelectorAll(".pct-slider").forEach(s => {
+    s.oninput = () => {
+      clampSlider(s);
+      refreshSliderLabels();
+      updateSumNote();
+    };
+  });
+  refreshSliderLabels();
+}
+
+/* Verhindert, dass die Summe der Anteile 100 % überschreitet:
+   der gerade bewegte Slider wird auf das verbleibende Budget begrenzt. */
+function clampSlider(moved) {
+  const sliders = [...document.querySelectorAll(".pct-slider")];
+  const others = sliders
+    .filter(s => s !== moved)
+    .reduce((a, s) => a + (+s.value), 0);
+  const max = Math.max(100 - others, 0);
+  if (+moved.value > max) moved.value = max;
+}
+
+function refreshSliderLabels() {
+  document.querySelectorAll(".pct-slider").forEach(s => {
+    s.parentElement.querySelector(".pct-val").textContent = s.value + " %";
+  });
+}
+
+function sliderSum() {
+  return [...document.querySelectorAll(".pct-slider")].reduce((a, s) => a + (+s.value), 0);
+}
+
+function updateSumNote() {
+  const sum = sliderSum();
+  const n = document.getElementById("statusNote");
+  if (sum === 0) {
+    n.innerHTML = '<span class="warn">Mindestens ein Anteil muss größer 0 sein.</span>';
+  } else if (sum < 100) {
+    n.textContent = `Summe der Anteile: ${sum} % — ${100 - sum} % noch nicht vergeben, werden beim Erzeugen anteilig aufgeteilt.`;
+  } else {
+    n.textContent = "Summe der Anteile: 100 % — vollständig vergeben.";
+  }
+}
+
+/* ---------- Hilfsfunktionen ---------- */
+
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+
+function makeRng(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function readFormats() {
+  return [...document.querySelectorAll(".format-row")].map(r => {
+    const f = STANDARD_FORMATS[+r.querySelector(".fmt-select").value];
+    return {
+      w: f.w, h: f.h, label: f.label,
+      pct: +r.querySelector(".pct-slider").value,
+      color: r.querySelector(".fmt-color").value
+    };
+  });
+}
+
+/* ---------- Rapport-Modul suchen ---------- */
+
+function fillModule(wu, hu, fmtU, targetFrac, rng) {
+  const total = wu * hu;
+  const grid = new Int16Array(total).fill(-1);
+  const placed = new Array(fmtU.length).fill(0);
+  const tiles = [];
+  let nodes = 0;
+  const NODE_CAP = 40000;
+
+  const cands = [];
+  fmtU.forEach((f, fi) => {
+    const ors = (f.wu === f.hu) ? [[f.wu, f.hu]] : [[f.wu, f.hu], [f.hu, f.wu]];
+    ors.forEach(([w, h]) => cands.push({ fi, w, h }));
+  });
+
+  function firstEmpty() {
+    for (let i = 0; i < total; i++) if (grid[i] === -1) return i;
+    return -1;
+  }
+  function fits(r, c, w, h) {
+    if (c + w > wu || r + h > hu) return false;
+    for (let rr = r; rr < r + h; rr++)
+      for (let cc = c; cc < c + w; cc++)
+        if (grid[rr * wu + cc] !== -1) return false;
+    return true;
+  }
+  function set(r, c, w, h, v) {
+    for (let rr = r; rr < r + h; rr++)
+      for (let cc = c; cc < c + w; cc++)
+        grid[rr * wu + cc] = v;
+  }
+  function rec() {
+    if (++nodes > NODE_CAP) return false;
+    const idx = firstEmpty();
+    if (idx < 0) return true;
+    const r = Math.floor(idx / wu), c = idx % wu;
+    const scored = cands.map(cd => {
+      const deficit = targetFrac[cd.fi] * total - placed[cd.fi];
+      return { cd, score: deficit + rng() * total * 0.25 };
+    }).sort((a, b) => b.score - a.score);
+    for (const { cd } of scored) {
+      if (!fits(r, c, cd.w, cd.h)) continue;
+      set(r, c, cd.w, cd.h, cd.fi);
+      placed[cd.fi] += cd.w * cd.h;
+      tiles.push({ x: c, y: r, w: cd.w, h: cd.h, fi: cd.fi });
+      if (rec()) return true;
+      tiles.pop();
+      placed[cd.fi] -= cd.w * cd.h;
+      set(r, c, cd.w, cd.h, -1);
+    }
+    return false;
+  }
+  return rec() ? { tiles, placed, total } : null;
+}
+
+function findRapport(fmtU, targetFrac, maxWu, maxHu, seed) {
+  const results = [];
+  const minSide = Math.min(...fmtU.flatMap(f => [f.wu, f.hu]));
+  const capW = Math.min(maxWu, 18);
+  const capH = Math.min(maxHu, 18);
+
+  for (let wu = minSide; wu <= capW; wu++) {
+    for (let hu = minSide; hu <= capH; hu++) {
+      if (wu * hu > 260) continue;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const rng = makeRng(seed + wu * 7919 + hu * 104729 + attempt * 31);
+        const res = fillModule(wu, hu, fmtU, targetFrac, rng);
+        if (!res) continue;
+        let valid = true;
+        for (let i = 0; i < fmtU.length; i++)
+          if (targetFrac[i] > 0.001 && res.placed[i] === 0) valid = false;
+        if (!valid) continue;
+        let dev = 0;
+        for (let i = 0; i < fmtU.length; i++)
+          dev += Math.abs(res.placed[i] / res.total - targetFrac[i]) * 100;
+        results.push({ wu, hu, dev, area: wu * hu, tiles: res.tiles, placed: res.placed, total: res.total });
+        break;
+      }
+    }
+  }
+  if (!results.length) return null;
+  results.sort((a, b) => {
+    const ba = Math.round(a.dev / 3), bb = Math.round(b.dev / 3);
+    if (ba !== bb) return ba - bb;
+    return a.area - b.area;
+  });
+  return results[0];
+}
+
+/* ---------- Erzeugen ---------- */
+
+function generate() {
+  const formats = readFormats();
+  const sum = formats.reduce((a, f) => a + f.pct, 0);
+  if (sum === 0) { alert("Mindestens ein Anteil muss größer 0 sein."); return; }
+  if (sum > 100) { alert("Die Summe der Anteile darf 100 % nicht überschreiten."); return; }
+  const targetFrac = formats.map(f => f.pct / sum);
+
+  const roomW = Math.round(+document.getElementById("roomW").value * 10);
+  const roomH = Math.round(+document.getElementById("roomH").value * 10);
+  if (!(roomW > 0 && roomH > 0)) { alert("Bitte gültige Maße eingeben."); return; }
+
+  const dims = formats.flatMap(f => [f.w, f.h]);
+  const unit = dims.reduce((a, b) => gcd(a, b));
+  const fmtU = formats.map(f => ({ wu: f.w / unit, hu: f.h / unit }));
+
+  const cols = Math.floor(roomW / unit);
+  const rows = Math.floor(roomH / unit);
+  if (cols < 1 || rows < 1) { alert("Fläche ist kleiner als das kleinste gewählte Format."); return; }
+  if (cols * rows > 60000) { alert("Fläche im Verhältnis zu den Formaten zu groß für die Vorschau."); return; }
+
+  const mod = findRapport(fmtU, targetFrac, cols, rows, 12345 + seedOffset * 977);
+  if (!mod) {
+    document.getElementById("statusNote").innerHTML =
+      '<span class="warn">Kein lückenloses Rapport-Modul mit dieser Formatkombination gefunden. Meist hilft ein Format, dessen Kantenlänge ein Teiler des anderen ist.</span>';
+    return;
+  }
+
+  lastResult = { mod, unit, formats, targetFrac, roomW, roomH, cols, rows };
+  draw();
+}
+
+/* ---------- Zeichnen ---------- */
+
+function draw() {
+  if (!lastResult) return;
+  const { mod, unit, formats, targetFrac, roomW, roomH, cols, rows } = lastResult;
+
+  const mirX = document.getElementById("mirrorX").checked;
+  const mirY = document.getElementById("mirrorY").checked;
+  const groutOn = document.getElementById("showGrout").checked;
+  const grout = groutOn ? Math.max(unit * 0.02, 3) : 0;
+  const showRapport = document.getElementById("showRapport").checked;
+  const rapColor = document.getElementById("rapportColor").value;
+  const shiftMode = document.getElementById("shiftMode").value;
+  const shiftPct = +document.getElementById("shiftPct").value;
+
+  const nx = mirX ? 2 : 1;
+  const ny = mirY ? 2 : 1;
+  const superWu = mod.wu * nx;
+  const superHu = mod.hu * ny;
+
+  // Wiederholeinheit (ggf. mit Spiegelbildern) aufbauen
+  const superTiles = [];
+  for (let by = 0; by < ny; by++) {
+    for (let bx = 0; bx < nx; bx++) {
+      const flipX = (bx === 1), flipY = (by === 1);
+      for (const t of mod.tiles) {
+        const lx = flipX ? (mod.wu - t.x - t.w) : t.x;
+        const ly = flipY ? (mod.hu - t.y - t.h) : t.y;
+        superTiles.push({ x: bx * mod.wu + lx, y: by * mod.hu + ly, w: t.w, h: t.h, fi: t.fi });
+      }
+    }
+  }
+
+  // Versatz je Reihe bzw. Spalte, auf ganze Rastereinheiten gerundet
+  const shiftStepX = (shiftMode === "h") ? Math.round(shiftPct / 100 * superWu) : 0;
+  const shiftStepY = (shiftMode === "v") ? Math.round(shiftPct / 100 * superHu) : 0;
+
+  const vbW = cols * unit, vbH = rows * unit;
+  const cellCount = cols * rows;
+  const areaByFmt = new Array(formats.length).fill(0);
+  const countByFmt = new Array(formats.length).fill(0);
+  let cutCells = 0;
+  let rects = "";
+
+  function drawTile(gx, gy, t) {
+    const cx0 = Math.max(gx, 0), cy0 = Math.max(gy, 0);
+    const cx1 = Math.min(gx + t.w, cols), cy1 = Math.min(gy + t.h, rows);
+    if (cx1 <= cx0 || cy1 <= cy0) return;
+    const isCut = (cx0 > gx || cy0 > gy || cx1 < gx + t.w || cy1 < gy + t.h);
+    areaByFmt[t.fi] += (cx1 - cx0) * (cy1 - cy0);
+    countByFmt[t.fi]++;
+    if (isCut) cutCells += (cx1 - cx0) * (cy1 - cy0);
+
+    const left = Math.max(gx * unit + grout / 2, 0);
+    const top = Math.max(gy * unit + grout / 2, 0);
+    const right = Math.min((gx + t.w) * unit - grout / 2, vbW);
+    const bottom = Math.min((gy + t.h) * unit - grout / 2, vbH);
+    const w = right - left, h = bottom - top;
+    if (w <= 0 || h <= 0) return;
+    rects += `<rect x="${left}" y="${top}" width="${w}" height="${h}" fill="${formats[t.fi].color}" rx="${unit * 0.03}"/>`;
+    if (isCut) rects += `<rect x="${left}" y="${top}" width="${w}" height="${h}" fill="url(#cutHatch)" rx="${unit * 0.03}"/>`;
+  }
+
+  const repX = Math.ceil(cols / superWu) + 1;
+  const repY = Math.ceil(rows / superHu) + 1;
+
+  if (shiftMode === "v") {
+    for (let mx = 0; mx < repX; mx++) {
+      const offY = -((mx * shiftStepY) % superHu);
+      for (let my = -1; my < repY; my++) {
+        const baseX = mx * superWu, baseY = my * superHu + offY;
+        for (const t of superTiles) drawTile(baseX + t.x, baseY + t.y, t);
+      }
+    }
+  } else {
+    for (let my = 0; my < repY; my++) {
+      const offX = (shiftMode === "h") ? -((my * shiftStepX) % superWu) : 0;
+      for (let mx = -1; mx < repX; mx++) {
+        const baseX = mx * superWu + offX, baseY = my * superHu;
+        for (const t of superTiles) drawTile(baseX + t.x, baseY + t.y, t);
+      }
+    }
+  }
+
+  // Genau eine Umrandung: das Grundmodul links oben (unversetzte Reihe/Spalte)
+  let outlines = "";
+  if (showRapport) {
+    const sw = Math.max(unit * 0.05, 5);
+    outlines += `<rect x="${sw / 2}" y="${sw / 2}"
+      width="${mod.wu * unit - sw}" height="${mod.hu * unit - sw}"
+      fill="none" stroke="${rapColor}" stroke-width="${sw}"/>`;
+    if (mirX || mirY) {
+      outlines += `<rect x="${sw / 2}" y="${sw / 2}"
+        width="${superWu * unit - sw}" height="${superHu * unit - sw}"
+        fill="none" stroke="${rapColor}" stroke-width="${sw * 0.7}"
+        stroke-dasharray="${sw * 3} ${sw * 2}" stroke-opacity="0.75"/>`;
+    }
+  }
+
+  const svg = `<svg viewBox="0 0 ${vbW} ${vbH}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="cutHatch" width="${unit / 2.5}" height="${unit / 2.5}" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <rect width="${unit / 2.5}" height="${unit / 2.5}" fill="none"/>
+        <line x1="0" y1="0" x2="0" y2="${unit / 2.5}" stroke="#0f0e0c" stroke-opacity="0.45" stroke-width="${unit / 9}"/>
+      </pattern>
+    </defs>
+    ${rects}${outlines}
+  </svg>`;
+  document.getElementById("canvasHost").innerHTML = svg;
+
+  /* Legende */
+  const legend = document.getElementById("legend");
+  legend.innerHTML = "";
+  formats.forEach((f, i) => {
+    const achieved = (areaByFmt[i] / cellCount * 100).toFixed(1);
+    const target = (targetFrac[i] * 100).toFixed(0);
+    const d = document.createElement("div");
+    d.className = "legend-item";
+    d.innerHTML = `<span class="sw" style="background:${f.color}"></span>
+      ${f.label} — Ziel ${target} % <span class="legend-num">(erreicht ${achieved} %, ${countByFmt[i]} Stk.)</span>`;
+    legend.appendChild(d);
+  });
+
+  const modW = mod.wu * unit / 10, modH = mod.hu * unit / 10;
+  const superW = superWu * unit / 10, superH = superHu * unit / 10;
+  const cutPct = (cutCells / cellCount * 100).toFixed(1);
+  const shiftCm = shiftMode === "h" ? shiftStepX * unit / 10 : shiftMode === "v" ? shiftStepY * unit / 10 : 0;
+
+  const info = document.createElement("div");
+  info.className = "info-block";
+  info.innerHTML = `
+    Grundmodul (durchgezogen): <strong>${modW.toFixed(1)} × ${modH.toFixed(1)} cm</strong>, ${mod.tiles.length} Fliesen · Rastereinheit ${(unit / 10).toFixed(1)} cm.<br>
+    ${(mirX || mirY) ? `Wiederholeinheit mit Spiegelung (gestrichelt): <strong>${superW.toFixed(1)} × ${superH.toFixed(1)} cm</strong>.<br>` : ""}
+    ${shiftMode !== "none" ? `Versatz: <strong>${shiftCm.toFixed(1)} cm</strong> je Modul${shiftMode === "h" ? "reihe, horizontal" : "spalte, vertikal"}.<br>` : ""}
+    Zuschnitt an den Rändern: ${cutPct} % der Fläche (schraffiert).
+  `;
+  legend.appendChild(info);
+
+  document.getElementById("statusNote").textContent =
+    `Abweichung vom Zielanteil: ${mod.dev.toFixed(1)} Prozentpunkte gesamt.`;
+}
+
+/* ---------- Events ---------- */
+
+document.getElementById("toggleThird").onclick = (e) => {
+  if (thirdActive) return;
+  thirdActive = true;
+  document.getElementById("formatRows").appendChild(buildFormatRow(2));
+
+  // Platz für das dritte Format schaffen, ohne die 100 % zu überschreiten
+  const sliders = [...document.querySelectorAll(".pct-slider")];
+  const neu = sliders[sliders.length - 1];
+  const wunsch = +neu.value;
+  const belegt = sliders.slice(0, -1).reduce((a, s) => a + (+s.value), 0);
+  let fehlt = wunsch - (100 - belegt);
+  while (fehlt > 0) {
+    const groesster = sliders.slice(0, -1).sort((a, b) => (+b.value) - (+a.value))[0];
+    if (+groesster.value === 0) break;
+    const abzug = Math.min(fehlt, +groesster.value);
+    groesster.value = +groesster.value - abzug;
+    fehlt -= abzug;
+  }
+  clampSlider(neu);
+
+  attachSliders();
+  updateSumNote();
+  e.target.style.display = "none";
+};
+document.getElementById("generateBtn").onclick = () => { seedOffset = 0; generate(); };
+document.getElementById("rerollBtn").onclick = () => { seedOffset++; generate(); };
+
+const shiftModeEl = document.getElementById("shiftMode");
+const shiftPctEl = document.getElementById("shiftPct");
+shiftModeEl.onchange = () => {
+  shiftPctEl.disabled = (shiftModeEl.value === "none");
+  draw();
+};
+shiftPctEl.oninput = () => {
+  document.getElementById("shiftVal").textContent = shiftPctEl.value + " %";
+  draw();
+};
+document.querySelectorAll(".quick button").forEach(b => {
+  b.onclick = () => {
+    if (shiftModeEl.value === "none") shiftModeEl.value = "h";
+    shiftPctEl.disabled = false;
+    shiftPctEl.value = b.dataset.shift;
+    document.getElementById("shiftVal").textContent = b.dataset.shift + " %";
+    draw();
+  };
+});
+["mirrorX", "mirrorY", "showRapport", "rapportColor", "showGrout"].forEach(id => {
+  document.getElementById(id).onchange = draw;
+});
+
+const host = document.getElementById("formatRows");
+host.appendChild(buildFormatRow(0));
+host.appendChild(buildFormatRow(1));
+attachSliders();
+updateSumNote();
+</script>
+
+</body>
+</html>

@@ -6,7 +6,7 @@ import {
   DesignFamilyJsonSchema,
 } from './design-family';
 import { DesignInstanceJsonSchema } from './instance';
-import { defaultJoint, GROUT_MATERIAL_ID, ProjectJointJsonSchema } from './joint';
+import { DEFAULT_JOINT_COLOR, defaultJoint, GROUT_MATERIAL_ID, ProjectJointJsonSchema } from './joint';
 import { MaterialDefinitionJsonSchema, createMaterialDefinition } from './material';
 import { defaultMaterials, groutMaterial, materialIdForLabel } from './material-presets';
 import { translationMat3 } from './mat3';
@@ -17,7 +17,13 @@ import {
   DEFAULT_PALETTE_C,
   type TileColorJson,
 } from './tile';
-import { TileSchemaJsonSchema } from './tile-grid';
+import {
+  createMasterGrid,
+  createTileGrid,
+  createTileGridInstance,
+  createTileSchema,
+  TileSchemaJsonSchema,
+} from './tile-grid';
 
 export const TilingProjectJsonSchema = z.object({
   type: z.literal('TilingProject'),
@@ -65,7 +71,6 @@ type LegacyTile = {
   materialId?: string;
   color?: unknown;
   colors?: string[];
-  texture?: string;
   rhythm?: unknown;
 };
 
@@ -258,7 +263,6 @@ function migrateProject(data: unknown): unknown {
       thickness: typeof t.thickness === 'number' && t.thickness > 0 ? t.thickness : 0.02,
       materialId,
       color: migrateTileColor(t),
-      texture: typeof t.texture === 'string' ? t.texture : undefined,
       rhythm: t.rhythm,
     };
   });
@@ -280,99 +284,109 @@ export function parseTilingProject(data: unknown): TilingProjectJson {
 
 export function createDefaultProject(): TilingProjectJson {
   const materials = defaultMaterials();
-  const terracotta = materials.find((m) => m.name === 'terracotta')!;
-  const stone = materials.find((m) => m.name === 'stone')!;
   const byName = (name: string) => materials.find((m) => m.name === name)!;
 
-  const tileA = createTileDefinition({
-    name: 'Reuse A',
+  /**
+   * Formats and tiling from a hand-tuned project. Renamed by format — the author's names were
+   * "Reuse A", "Reuse B", "2x3" and "Tile", which say nothing — and repointed to the materials
+   * imported alongside them. Their colours, edge rhythms, corner rounding and thickness are
+   * kept as authored.
+   */
+  const square600 = createTileDefinition({
+    name: 'Square 600',
     length: 0.6,
+    width: 0.6,
+    thickness: 0.03,
+    materialId: byName('arabescato').id,
+    color: { mode: 'palette', colors: ['#f5f7d9', '#f5f7d9', '#f5f7d9'], c: [1, 1, 1] },
+    rhythm: {
+      south: { name: 'B', mirrored: true },
+      east: { name: 'A', mirrored: false },
+      north: { name: 'A', mirrored: true },
+      west: { name: 'B', mirrored: false },
+    },
+    cornerRounding: 0.025,
+  });
+  const square200 = createTileDefinition({
+    name: 'Square 200',
+    length: 0.2,
+    width: 0.2,
+    thickness: 0.025,
+    materialId: byName('worn terracotta').id,
+    color: { mode: 'brightness', color: '#4517ee' },
+    cornerRounding: 0.045,
+  });
+  const slab200x300 = createTileDefinition({
+    name: 'Slab 200 x 300',
+    length: 0.2,
     width: 0.3,
     thickness: 0.02,
-    materialId: terracotta.id,
-    color: {
-      mode: 'palette',
-      colors: ['#b86b3c', '#c47a4a', '#9a5528'],
-      c: [1, 1, 1],
-    },
+    materialId: byName('worn terracotta').id,
+    color: { mode: 'brightness', color: '#c4a574' },
+    cornerRounding: 0.02,
+  });
+  const slab200x400 = createTileDefinition({
+    name: 'Slab 200 x 400',
+    length: 0.2,
+    width: 0.4,
+    thickness: 0.02,
+    materialId: byName('flamed granite').id,
+    color: { mode: 'palette', colors: ['#8e9bcc', '#9a9fb1', '#8a92b2'], c: [0.61, 0.55, 0.98] },
     rhythm: {
       south: { name: 'A', mirrored: false },
-      north: { name: 'A', mirrored: true },
       east: { name: 'B', mirrored: false },
+      north: { name: 'A', mirrored: true },
       west: { name: 'B', mirrored: true },
     },
+    cornerRounding: 0,
   });
-  const tileB = createTileDefinition({
-    name: 'Reuse B',
-    length: 0.4,
-    width: 0.4,
-    thickness: 0.025,
-    materialId: stone.id,
-    color: { mode: 'brightness', color: '#8a8f7a' },
-    rhythm: {
-      south: { name: 'C', mirrored: false },
-      north: { name: 'C', mirrored: true },
-      east: { name: 'C', mirrored: false },
-      west: { name: 'C', mirrored: true },
-    },
+  const square125 = createTileDefinition({
+    name: 'Square 125',
+    length: 0.125,
+    width: 0.125,
+    thickness: 0.03,
+    materialId: byName('arabescato').id,
+    color: { mode: 'palette', colors: ['#c4a574', '#c4a574', '#c4a574'], c: [0.83, 0.68, 0.92] },
+    cornerRounding: 0,
   });
 
   /**
-   * Formats imported from a hand-tuned project. Renamed by format — the author's names were
-   * "Reuse A", "Reuse B", "2x3" and "Tile", which collide with the two above or say nothing —
-   * and repointed to the materials imported alongside them. Their colours, edge rhythms,
-   * corner rounding and thickness are kept as authored.
+   * A 6×6 repeat on a 130 mm cell: one 600 mm square in a 5×5 footprint, bordered on two
+   * sides by 125 mm squares, so every repeat reads as a large slab framed by a strip of small
+   * ones. The 5×5 footprint is 645 mm, so the square sits centred with widened joints.
    */
-  const imported = [
-    createTileDefinition({
-      name: 'Square 620',
-      length: 0.62,
-      width: 0.62,
-      thickness: 0.03,
-      materialId: byName('arabescato').id,
-      color: { mode: 'palette', colors: ['#f5f7d9', '#f5f7d9', '#f5f7d9'], c: [1, 1, 1] },
-      rhythm: {
-        south: { name: 'B', mirrored: true },
-        east: { name: 'A', mirrored: false },
-        north: { name: 'A', mirrored: true },
-        west: { name: 'B', mirrored: false },
-      },
-      cornerRounding: 0.025,
-    }),
-    createTileDefinition({
-      name: 'Square 200',
-      length: 0.2,
-      width: 0.2,
-      thickness: 0.025,
-      materialId: byName('worn terracotta').id,
-      color: { mode: 'brightness', color: '#4517ee' },
-      cornerRounding: 0.045,
-    }),
-    createTileDefinition({
-      name: 'Slab 200 x 300',
-      length: 0.2,
-      width: 0.3,
-      thickness: 0.02,
-      materialId: byName('worn terracotta').id,
-      color: { mode: 'brightness', color: '#c4a574' },
-      cornerRounding: 0.02,
-    }),
-    createTileDefinition({
-      name: 'Slab 200 x 400',
-      length: 0.2,
-      width: 0.4,
-      thickness: 0.02,
-      materialId: byName('flamed granite').id,
-      color: { mode: 'palette', colors: ['#8e9bcc', '#9a9fb1', '#8a92b2'], c: [0.61, 0.55, 0.98] },
-      rhythm: {
-        south: { name: 'A', mirrored: false },
-        east: { name: 'B', mirrored: false },
-        north: { name: 'A', mirrored: true },
-        west: { name: 'B', mirrored: true },
-      },
-      cornerRounding: 0,
-    }),
-  ];
+  const tileSchema = (() => {
+    const grid = createTileGrid({
+      name: 'Repeat',
+      cell: { x: 0.13, y: 0.13 },
+      joint: 0.005,
+      extent: { iCount: 6, jCount: 6 },
+      instances: [
+        ...Array.from({ length: 6 }, (_, i) => createTileGridInstance(square125.id, i, 0)),
+        ...Array.from({ length: 5 }, (_, j) => createTileGridInstance(square125.id, 0, j + 1)),
+        createTileGridInstance(square600.id, 1, 1, 5, 5),
+      ],
+      fallbackTileDefinitionId: square125.id,
+    });
+    const master = createMasterGrid({
+      name: 'Master',
+      childId: grid.id,
+      u: { i: 6, j: 0 },
+      v: { i: 0, j: 6 },
+    });
+    return createTileSchema({
+      tileGrids: [grid],
+      masterGrids: [master],
+      rootMasterGridId: master.id,
+    });
+  })();
+
+  const normal = (tile: { id: string }, mean: number, stdDev: number) => ({
+    tileDefinitionId: tile.id,
+    kind: 'distribution' as const,
+    distribution: 'normal' as const,
+    params: { mean, stdDev },
+  });
 
   return {
     type: 'TilingProject',
@@ -382,34 +396,40 @@ export function createDefaultProject(): TilingProjectJson {
       updatedAt: new Date().toISOString(),
     },
     materials,
-    tileDefinitions: [tileA, tileB, ...imported],
+    tileDefinitions: [square600, square200, slab200x300, slab200x400, square125],
     stock: {
       type: 'StockState',
       entries: [
-        { tileDefinitionId: tileA.id, kind: 'exact', count: 40 },
         {
-          tileDefinitionId: tileB.id,
+          tileDefinitionId: square600.id,
           kind: 'distribution',
-          distribution: 'normal',
-          params: { mean: 20, stdDev: 4 },
+          distribution: 'uniform',
+          params: { min: 360, max: 360 },
         },
+        normal(square200, 240, 20),
+        normal(slab200x300, 100, 2),
+        normal(slab200x400, 1000, 2),
+        normal(square125, 600, 20),
       ],
     },
+    // Only drives the solve when the tile schema is removed.
     designFamily: (() => {
       const family = createEmptyDesignFamily();
       const module = family.modules[0]!;
+      const gap = 0.005;
       module.placements = [
-        createModulePlacement(tileA.id, 0, 0),
-        { ...createModulePlacement(tileB.id, tileA.length + 0.002, 0) },
+        createModulePlacement(square600.id, 0, 0),
+        createModulePlacement(square200.id, square600.length + gap, 0),
       ];
       module.repeat = {
         count: 3,
-        offsetMat3: translationMat3(tileA.length + tileB.length + 0.004, 0),
+        offsetMat3: translationMat3(square600.length + square200.length + 2 * gap, 0),
       };
       return family;
     })(),
     boundaries: defaultBoundaries(),
-    joint: defaultJoint(),
+    tileSchema,
+    joint: { materialId: byName('worn terracotta').id, color: { ...DEFAULT_JOINT_COLOR }, depth: 0 },
   };
 }
 

@@ -3,16 +3,644 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <title>Vibed · Reused · Tiled</title>
+    <meta
+      name="description"
+      content="DMS 2026 hackathon: describing tiling intentions for a reused tile stock. The main app plus two example projects."
+    />
+    <meta name="color-scheme" content="dark" />
+    <script>
+      // The app used to live at the site root. Keep old deep links (#/tiles, #/solve, …) working.
+      if (/^#\/./.test(location.hash)) location.replace('app/' + location.hash);
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fragment+Mono:ital@0;1&display=swap"
       rel="stylesheet"
     />
+    <style>
+      :root {
+        --bg0: #1a1714;
+        --bg1: #241f1a;
+        --bg2: #2e2822;
+        --ink: #f3ebe1;
+        --muted: #b5a89a;
+        --line: #4a4036;
+        --accent: #d9773a;
+        --accent-2: #6f8f6a;
+        --font: 'DM Sans', system-ui, sans-serif;
+        --mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        --max: 1120px;
+        color: var(--ink);
+        font-family: var(--font);
+        line-height: 1.5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        background:
+          radial-gradient(1200px 600px at 10% -10%, #3a2a1f 0%, transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, #2a3328 0%, transparent 50%),
+          var(--bg0);
+        overflow-x: clip;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      img {
+        max-width: 100%;
+        display: block;
+      }
+
+      .wrap {
+        width: 100%;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 1.25rem;
+      }
+
+      /* Header */
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(in srgb, var(--bg1) 92%, transparent);
+        backdrop-filter: blur(8px);
+      }
+
+      .top .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-height: 3.75rem;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        text-decoration: none;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 2.35rem;
+        height: 2.35rem;
+        color: var(--ink);
+      }
+
+      .brand-mark svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .brand-title {
+        display: block;
+        font-size: 0.98rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+      }
+
+      .brand-sub {
+        display: block;
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .top-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .top-nav a:not(.btn) {
+        color: var(--muted);
+        text-decoration: none;
+        padding: 0.4rem 0.55rem;
+        border: 1px solid transparent;
+        font-size: 0.85rem;
+      }
+
+      .top-nav a:not(.btn):hover {
+        color: var(--ink);
+        border-color: var(--line);
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--bg1);
+        color: var(--ink);
+        padding: 0.55rem 0.95rem;
+        min-height: 44px;
+        text-decoration: none;
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background-color 0.15s ease;
+      }
+
+      .btn:hover {
+        border-color: var(--accent);
+      }
+
+      .btn.primary {
+        background: color-mix(in srgb, var(--accent) 25%, var(--bg1));
+        border-color: var(--accent);
+      }
+
+      .btn.primary:hover {
+        background: color-mix(in srgb, var(--accent) 40%, var(--bg1));
+      }
+
+      /* Hero */
+      .hero {
+        display: grid;
+        gap: 2rem;
+        align-items: center;
+        padding: 3rem 0 2.5rem;
+      }
+
+      @media (min-width: 860px) {
+        .hero {
+          grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+          gap: 3rem;
+          padding: 4.5rem 0 3.5rem;
+        }
+      }
+
+      .eyebrow {
+        margin: 0 0 0.85rem;
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      .hero h1 {
+        margin: 0 0 1rem;
+        font-size: clamp(2rem, 5.5vw, 3.4rem);
+        font-weight: 600;
+        line-height: 1.08;
+        letter-spacing: -0.01em;
+      }
+
+      .hero h1 .dot {
+        color: var(--accent);
+      }
+
+      .lede {
+        margin: 0 0 0.85rem;
+        color: var(--muted);
+        font-size: 1.05rem;
+        max-width: 38rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin-top: 1.5rem;
+      }
+
+      .hero-media {
+        margin: 0;
+        border: 1px solid var(--line);
+        background: var(--bg2);
+        padding: 0.5rem;
+        position: relative;
+      }
+
+      .hero-media img {
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+      }
+
+      .hero-media figcaption {
+        margin-top: 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      /* Sections */
+      section {
+        padding: 2.5rem 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 600;
+      }
+
+      .section-head p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 40rem;
+      }
+
+      /* Project cards */
+      .cards {
+        display: grid;
+        gap: 1rem;
+      }
+
+      @media (min-width: 760px) {
+        .cards {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .card--main {
+          grid-column: 1 / -1;
+        }
+      }
+
+      @media (min-width: 1000px) {
+        .cards {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .card--main {
+          grid-column: auto;
+        }
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        padding: 1.25rem;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--bg2) 80%, transparent);
+        min-width: 0;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      }
+
+      .card:hover {
+        border-color: var(--accent);
+      }
+
+      .card--main {
+        border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+        background:
+          linear-gradient(160deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
+          color-mix(in srgb, var(--bg2) 85%, transparent);
+      }
+
+      .tag {
+        align-self: flex-start;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        padding: 0.2rem 0.45rem;
+      }
+
+      .card--main .tag {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .card h3 {
+        margin: 0.25rem 0 0;
+        font-size: 1.15rem;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+
+      .by {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .by strong {
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      .card p.desc {
+        margin: 0;
+        color: var(--muted);
+        flex: 1 1 auto;
+      }
+
+      .card .btn {
+        align-self: flex-start;
+        margin-top: 0.5rem;
+      }
+
+      /* Workflow strip */
+      .steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      @media (min-width: 760px) {
+        .steps {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 1000px) {
+        .steps {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+
+      .steps a {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        padding: 0.85rem 0.9rem;
+        border: 1px solid var(--line);
+        background: var(--bg1);
+        text-decoration: none;
+        color: var(--ink);
+        min-height: 100%;
+      }
+
+      .steps a:hover {
+        border-color: var(--accent);
+      }
+
+      .steps .n {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--accent);
+      }
+
+      .steps .t {
+        font-weight: 500;
+        font-size: 0.95rem;
+      }
+
+      .steps .s {
+        color: var(--muted);
+        font-size: 0.8rem;
+        line-height: 1.35;
+      }
+
+      /* Footer */
+      footer {
+        border-top: 1px solid var(--line);
+        padding: 1.5rem 0 2.5rem;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.5rem;
+        justify-content: space-between;
+      }
+
+      footer a {
+        color: var(--muted);
+      }
+
+      footer a:hover {
+        color: var(--ink);
+      }
+
+      @media (max-width: 640px) {
+        /* Phone header: brand + one button. Text links live in the hero and footer too. */
+        .brand-sub,
+        .top-nav a:not(.btn) {
+          display: none;
+        }
+
+        .top-nav {
+          flex: 0 0 auto;
+          flex-wrap: nowrap;
+        }
+
+        .top-nav .btn {
+          min-height: 40px;
+          padding: 0.45rem 0.75rem;
+          font-size: 0.9rem;
+        }
+
+        .brand > span:last-child {
+          min-width: 0;
+        }
+
+        .brand-title {
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="./">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 64 64">
+              <rect x="8" y="8" width="12" height="16" rx="1.5" fill="#7a3418" />
+              <rect x="8" y="26" width="12" height="16" rx="1.5" fill="#a84e26" />
+              <rect x="8" y="44" width="12" height="12" rx="1.5" fill="#d9773a" />
+              <rect x="22" y="44" width="16" height="12" rx="1.5" fill="#e49b62" />
+              <rect x="40" y="44" width="16" height="12" rx="1.5" fill="#eebf8e" />
+              <rect x="23" y="9" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" />
+            </svg>
+          </span>
+          <span>
+            <span class="brand-title">Vibed · Reused · Tiled</span>
+            <span class="brand-sub">DMS 2026 hackathon</span>
+          </span>
+        </a>
+        <nav class="top-nav" aria-label="Site">
+          <a href="#projects">Projects</a>
+          <a href="https://github.com/repurposed-ch/vibed-reused-tiled" target="_blank" rel="noopener">GitHub</a>
+          <a class="btn primary" href="app/">Open the app</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">DMS 2026 · Hackathon</p>
+            <h1>Vibed<span class="dot"> · </span>Reused<span class="dot"> · </span>Tiled</h1>
+            <p class="lede">
+              Industrial materials are calibrated to demand. Reused ones are not. Reuse starts
+              from a limited stock of tiles with rough dimensions, rough properties and only a
+              rough idea of how many of each kind there will be.
+            </p>
+            <p class="lede">
+              So instead of one fixed solution, the designer describes an intention, a
+              <em>vibe</em>: a pattern, a texture, a material quality, a cultural reference. The
+              tools here explore how to describe that vibe while keeping control over both design
+              and construction.
+            </p>
+            <div class="actions">
+              <a class="btn primary" href="app/">Open the app</a>
+              <a class="btn" href="#projects">Example projects</a>
+            </div>
+          </div>
+          <figure class="hero-media">
+            <img src="./assets/tiles.jpeg" alt="Stacks of reused ceramic tiles in mixed colours and sizes" />
+            <figcaption>Reused tile stock: known roughly, never exactly.</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <section id="projects">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>Projects</h2>
+            <p>The main app, plus two example projects that grew out of the same hackathon.</p>
+          </div>
+          <div class="cards">
+            <article class="card card--main">
+              <span class="tag">Main app</span>
+              <h3>Vibed · Reused · Tiled</h3>
+              <p class="by">Design families for reused tile stock</p>
+              <p class="desc">
+                Describe a tiling intention as a design family, sample an uncertain reused stock,
+                solve layouts inside real boundaries, and review the result in 2D and 3D. Optional
+                LLM assist drafts design families for you.
+              </p>
+              <a class="btn primary" href="app/">Open the app</a>
+            </article>
+
+            <article class="card">
+              <span class="tag">Example project</span>
+              <h3>Tile Stock Image Sampler</h3>
+              <p class="by">by <strong>Harrison Hildebrandt</strong></p>
+              <p class="desc">
+                Count a reused tile stock from a photo. A Python and OpenCV script clusters
+                colours, splits tiles on the grout lines and writes one CSV row per tile.
+              </p>
+              <a class="btn" href="examples/tile-stock-sampler/index.html">Open project</a>
+            </article>
+
+            <article class="card">
+              <span class="tag">Example project</span>
+              <h3>Tile Patterns</h3>
+              <p class="by">by <strong>Moritz Funck</strong></p>
+              <p class="desc">
+                A pattern generator that fills an area with two or three tile formats by area
+                share, with mirroring and module offset. Interface in German.
+              </p>
+              <a class="btn" href="examples/tile-patterns/index.html">Open project</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow">
+        <div class="wrap">
+          <div class="section-head">
+            <h2>How the app works</h2>
+            <p>Six steps, each one a page in the app. Jump straight into any of them.</p>
+          </div>
+          <ol class="steps">
+            <li>
+              <a href="app/#/tiles">
+                <span class="n">01</span>
+                <span class="t">Tiles &amp; materials</span>
+                <span class="s">Define tile types, sizes and material presets.</span>
+              </a>
+            </li>
+            <li>
+              <a href="app/#/stock">
+                <span class="n">02</span>
+                <span class="t">Stock</span>
+                <span class="s">Roughly how many of each tile to expect.</span>
+              </a>
+            </li>
+            <li>
+              <a href="app/#/tile-schema">
+                <span class="n">03</span>
+                <span class="t">Design family</span>
+                <span class="s">Describe the vibe as a schema, not one fixed layout.</span>
+              </a>
+            </li>
+            <li>
+              <a href="app/#/boundaries">
+                <span class="n">04</span>
+                <span class="t">Boundaries</span>
+                <span class="s">The real region that has to be tiled.</span>
+              </a>
+            </li>
+            <li>
+              <a href="app/#/solve">
+                <span class="n">05</span>
+                <span class="t">Solve</span>
+                <span class="s">Fit the family to the stock inside the boundary.</span>
+              </a>
+            </li>
+            <li>
+              <a href="app/#/view/3d">
+                <span class="n">06</span>
+                <span class="t">2D &amp; 3D views</span>
+                <span class="s">Review and export the result.</span>
+              </a>
+            </li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>DMS 2026 hackathon · Vibed · Reused · Tiled</span>
+        <span>
+          <a href="https://github.com/repurposed-ch/vibed-reused-tiled" target="_blank" rel="noopener">repurposed-ch/vibed-reused-tiled</a>
+        </span>
+      </div>
+    </footer>
   </body>
 </html>

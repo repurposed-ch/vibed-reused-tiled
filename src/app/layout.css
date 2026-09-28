@@ -75,6 +75,12 @@ textarea {
   align-items: center;
   min-width: 0;
   flex: 0 1 auto;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand:hover .brand-mark {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .brand > div {
@@ -88,11 +94,12 @@ textarea {
   flex: 0 0 auto;
   width: 2.35rem;
   height: 2.35rem;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
 }
 
 .brand-title {

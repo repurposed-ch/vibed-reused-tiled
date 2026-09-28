@@ -9,17 +9,12 @@ import type { TilingProjectJson } from '@/domain/project';
  * key that included those two fields — would solve, write, see a changed
  * project, and solve again forever. Leaving `meta` and `instance` out is the
  * loop guard, which is why it has a test of its own.
- *
- * Baked textures are stripped as well: they are data URLs running to megabytes,
- * they have no bearing on where a tile goes, and hashing them on every keystroke
- * would cost more than the solve.
  */
 export function solveSignature(project: TilingProjectJson, seed: number): string {
   return JSON.stringify({
     seed,
     tiles: project.tileDefinitions.map((tile) => ({
       ...tile,
-      texture: undefined,
       // Rounding changes how a tile is drawn, never where it goes. Hashing it would re-solve
       // on every slider tick and hand every placement a fresh id.
       cornerRounding: undefined,

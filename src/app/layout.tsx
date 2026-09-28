@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Logo } from './components/logo';
 import './layout.css';
 
 const DESKTOP_MQ = '(min-width: 1081px)';
@@ -61,13 +62,15 @@ export function AppLayout() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark">VRT</span>
+        <a className="brand" href="../" title="Back to the landing page">
+          <span className="brand-mark">
+            <Logo />
+          </span>
           <div>
             <p className="brand-title">Vibed · Reused · Tiled</p>
             <p className="brand-sub">Design families under uncertain stock</p>
           </div>
-        </div>
+        </a>
 
         <nav className="app-nav-inline" aria-label="Workflow stages">
           {links.map((link) => (

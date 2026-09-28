@@ -62,8 +62,6 @@ export const TileDefinitionJsonSchema = z.object({
   materialId: z.string().min(1),
   /** Brightness (1 hex) or Quilez palette (3 hex + c floats). */
   color: TileColorJsonSchema,
-  /** Optional cached bake (data URL); filled on save / explicit bake. */
-  texture: z.string().min(1).optional(),
   /** None → continuous UV; all four sides → edged UV. */
   rhythm: RhythmObjectSchema.optional(),
   /**
@@ -119,7 +117,6 @@ export function createTileDefinition(
     thickness: partial?.thickness ?? 0.02,
     materialId: partial?.materialId ?? 'material-ceramic',
     color,
-    texture: partial?.texture,
     rhythm: partial?.rhythm,
     cornerRounding: partial?.cornerRounding ?? 0,
   };
