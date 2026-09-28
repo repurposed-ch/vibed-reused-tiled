@@ -4,6 +4,7 @@ import {
   addMasterLevelAboveRoot,
   bestSpanForDrag,
   blockStep,
+  clearTileGrid,
   createMasterGrid,
   createTileGrid,
   createTileGridInstance,
@@ -16,14 +17,17 @@ import {
   removeInstanceAt,
   removeRootMasterLevel,
   setLevelExtent,
+  setTileGridExtent,
   spanFor,
   spanOptions,
+  stretchLattice,
   unclaimedCells,
+  type IntVec2,
   type TileGridInstanceJson,
   type TileGridJson,
   type TileSchemaJson,
 } from '@/domain/tile-grid';
-import { resolveSchema } from '@/workflow/tile-grid-lattice';
+import { resolveSchema, tryResolveSchema } from '@/workflow/tile-grid-lattice';
 
 const CELL = 0.15;
 
@@ -270,5 +274,164 @@ describe('nesting', () => {
     const grown = setLevelExtent(sheared, innerId, { iCount: 2, jCount: 1 });
     const root = grown.masterGrids.find((m) => m.id === rootId);
     expect(root?.u).toEqual({ i: 1, j: 1 });
+  });
+});
+
+describe('stretchLattice', () => {
+  it('stretches a block step along the changed axis, both ways', () => {
+    expect(stretchLattice({ i: 4, j: 0 }, { i: 0, j: 4 }, 'i', 4, 5)).toEqual({
+      u: { i: 5, j: 0 },
+      v: { i: 0, j: 4 },
+    });
+    expect(stretchLattice({ i: 4, j: 0 }, { i: 0, j: 4 }, 'j', 4, 3)).toEqual({
+      u: { i: 4, j: 0 },
+      v: { i: 0, j: 3 },
+    });
+  });
+
+  it('keeps a half-bond offset a half-bond where the block allows it', () => {
+    expect(stretchLattice({ i: 2, j: 0 }, { i: 1, j: 1 }, 'i', 2, 4)).toEqual({
+      u: { i: 4, j: 0 },
+      v: { i: 2, j: 1 },
+    });
+  });
+
+  it('refuses a sheared lattice whose area would not follow the block', () => {
+    expect(stretchLattice({ i: 4, j: 4 }, { i: 7, j: 1 }, 'i', 4, 5)).toBeNull();
+  });
+});
+
+describe('setTileGridExtent', () => {
+  function schemaOf(grid: TileGridJson, u: IntVec2, v: IntVec2): TileSchemaJson {
+    const master = createMasterGrid({ id: 'm', childId: grid.id, u, v });
+    return createTileSchema({ tileGrids: [grid], masterGrids: [master], rootMasterGridId: 'm' });
+  }
+
+  function stack(iCount: number, jCount: number): TileSchemaJson {
+    const grid = createTileGrid({
+      id: 'grid',
+      cell: { x: CELL, y: CELL },
+      extent: { iCount, jCount },
+      instances: extentCells({ iCount, jCount }).map((c) => instance('b', c.i, c.j)),
+      fallbackTileDefinitionId: 'b',
+    });
+    return schemaOf(grid, { i: iCount, j: 0 }, { i: 0, j: jCount });
+  }
+
+  const unit = { fallbackIsUnit: true };
+  const master = (schema: TileSchemaJson) => schema.masterGrids[0]!;
+  const grid = (schema: TileSchemaJson) => schema.tileGrids[0]!;
+
+  it('grows a stack: u follows and the new column is filled', () => {
+    const grown = setTileGridExtent(stack(4, 4), 'grid', { iCount: 5, jCount: 4 }, unit);
+    expect(grown.lattice).toBe('stretched');
+    expect(grown.filled).toBe(4);
+    expect(master(grown.schema).u).toEqual({ i: 5, j: 0 });
+    expect(tryResolveSchema(grown.schema).ok).toBe(true);
+
+    const back = setTileGridExtent(grown.schema, 'grid', { iCount: 4, jCount: 4 }, unit);
+    expect(master(back.schema).u).toEqual({ i: 4, j: 0 });
+    expect(grid(back.schema).instances).toHaveLength(16);
+    expect(tryResolveSchema(back.schema).ok).toBe(true);
+  });
+
+  it('grows rows through the j components', () => {
+    const grown = setTileGridExtent(stack(2, 2), 'grid', { iCount: 2, jCount: 3 }, unit);
+    expect(master(grown.schema).v).toEqual({ i: 0, j: 3 });
+    expect(grown.filled).toBe(2);
+    expect(tryResolveSchema(grown.schema).ok).toBe(true);
+  });
+
+  it('keeps a running bond tiling as it widens', () => {
+    const slab = createTileGrid({
+      id: 'grid',
+      cell: { x: CELL, y: CELL },
+      extent: { iCount: 2, jCount: 1 },
+      instances: [{ tileDefinitionId: 'c', i: 0, j: 0, iSpan: 2, jSpan: 1, rotated: false }],
+      fallbackTileDefinitionId: 'b',
+    });
+    const grown = setTileGridExtent(
+      schemaOf(slab, { i: 2, j: 0 }, { i: 1, j: 1 }),
+      'grid',
+      { iCount: 3, jCount: 1 },
+      unit,
+    );
+    expect(master(grown.schema).u).toEqual({ i: 3, j: 0 });
+    expect(tryResolveSchema(grown.schema).ok).toBe(true);
+  });
+
+  it('leaves a staircase lattice alone and adds nothing', () => {
+    const stairs = createTileGrid({
+      id: 'grid',
+      cell: { x: CELL, y: CELL },
+      extent: { iCount: 4, jCount: 7 },
+      instances: [
+        instance('a', 0, 0, 3),
+        instance('a', 0, 3, 3),
+        instance('b', 1, 6),
+        instance('b', 2, 6),
+        instance('b', 3, 6),
+        instance('b', 3, 5),
+        instance('b', 3, 4),
+        instance('b', 3, 3),
+      ],
+      fallbackTileDefinitionId: 'b',
+    });
+    const schema = schemaOf(stairs, { i: 4, j: 4 }, { i: 7, j: 1 });
+    expect(tryResolveSchema(schema).ok).toBe(true);
+    const grown = setTileGridExtent(schema, 'grid', { iCount: 5, jCount: 7 }, unit);
+    expect(grown.lattice).toBe('kept');
+    expect(grown.filled).toBe(0);
+    expect(master(grown.schema).u).toEqual({ i: 4, j: 4 });
+    expect(tryResolveSchema(grown.schema).ok).toBe(true);
+  });
+
+  it('breaks a large format cut by the new edge into fallback units', () => {
+    const shrunk = setTileGridExtent(
+      schemaOf(gridA3(), { i: 4, j: 0 }, { i: 0, j: 4 }),
+      'grid',
+      { iCount: 2, jCount: 4 },
+      unit,
+    );
+    expect(shrunk.brokenDown).toBe(6);
+    expect(master(shrunk.schema).u).toEqual({ i: 2, j: 0 });
+    expect(grid(shrunk.schema).instances.some(isA0)).toBe(false);
+    expect(tryResolveSchema(shrunk.schema).ok).toBe(true);
+  });
+
+  it('drops cut formats and fills nothing without a one-cell fallback', () => {
+    const shrunk = setTileGridExtent(
+      schemaOf(gridA3(), { i: 4, j: 0 }, { i: 0, j: 4 }),
+      'grid',
+      { iCount: 2, jCount: 4 },
+      { fallbackIsUnit: false },
+    );
+    expect(shrunk.brokenDown).toBe(0);
+    expect(grid(shrunk.schema).instances.every((i) => i.tileDefinitionId === 'b')).toBe(true);
+    const grown = setTileGridExtent(stack(2, 2), 'grid', { iCount: 3, jCount: 2 }, {
+      fallbackIsUnit: false,
+    });
+    expect(grown.filled).toBe(0);
+  });
+});
+
+describe('clearTileGrid', () => {
+  it('empties the grid and resets its lattice to the block step', () => {
+    const grid = gridA3();
+    const master = createMasterGrid({
+      id: 'm',
+      childId: grid.id,
+      u: { i: 4, j: 1 },
+      v: { i: 0, j: 4 },
+      mirror: { x: 'alternate', y: 'none' },
+    });
+    const schema = createTileSchema({ tileGrids: [grid], masterGrids: [master], rootMasterGridId: 'm' });
+    const cleared = clearTileGrid(schema, grid.id);
+    expect(cleared.tileGrids[0]!.instances).toEqual([]);
+    expect(cleared.tileGrids[0]!.extent).toEqual(grid.extent);
+    expect(cleared.tileGrids[0]!.cell).toEqual(grid.cell);
+    expect(cleared.masterGrids[0]!.u).toEqual({ i: 4, j: 0 });
+    expect(cleared.masterGrids[0]!.v).toEqual({ i: 0, j: 4 });
+    expect(cleared.masterGrids[0]!.mirror).toEqual({ x: 'none', y: 'none' });
   });
 });

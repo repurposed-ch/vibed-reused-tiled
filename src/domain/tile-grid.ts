@@ -660,3 +660,131 @@ export function setLevelExtent(
     }),
   };
 }
+
+/**
+ * Stretch a lattice with its block along one axis.
+ *
+ * Growing the block from `from` to `to` cells is a stretch of that axis by `to / from`, so
+ * the lattice gets the same stretch: that axis's component of both vectors scales, rounded
+ * to whole cells. The result is only accepted when the repeat's area scales with the block —
+ * `det′ · from = det · to`, exact in integers. A stack or bond passes (`u = (W, 0)` becomes
+ * `(W′, 0)`, a half offset stays a half offset where it can); a hand-sheared lattice such as
+ * a staircase fails, and null tells the caller to leave it to the user.
+ */
+export function stretchLattice(
+  u: IntVec2,
+  v: IntVec2,
+  axis: 'i' | 'j',
+  from: number,
+  to: number,
+): { u: IntVec2; v: IntVec2 } | null {
+  if (from === to) return { u, v };
+  const scale = (c: number) => Math.round((c * to) / from);
+  const nu = { ...u, [axis]: scale(u[axis]) };
+  const nv = { ...v, [axis]: scale(v[axis]) };
+  const det = u.i * v.j - u.j * v.i;
+  const nextDet = nu.i * nv.j - nu.j * nv.i;
+  return nextDet * from === det * to ? { u: nu, v: nv } : null;
+}
+
+export type TileGridResize = {
+  schema: TileSchemaJson;
+  /** Whether the lattice acting on the grid followed the block, kept its vectors, or had nothing to follow. */
+  lattice: 'stretched' | 'kept' | 'unchanged';
+  /** Fallback tiles laid on cells the block grew by. */
+  filled: number;
+  /** Fallback tiles standing in for occurrences the new edge cut. */
+  brokenDown: number;
+};
+
+/**
+ * Change a tile grid's extent and keep a working repeat working.
+ *
+ * The lattice above the grid follows the block through {@link stretchLattice}. Occurrences
+ * the new edge cuts break down into the fallback on their surviving cells — the same thing
+ * the fill does at a boundary — and cells the block grows by take the fallback, so a stack
+ * that tiled at 4 columns still tiles at 5. Growth is only filled when the lattice followed
+ * and the old block was full: a sheared repeat's blanks are legitimate, and its unchanged
+ * lattice keeps it valid as long as nothing is added. Without a one-cell fallback there is
+ * nothing to fill with, so cut occurrences are dropped and new cells stay blank.
+ */
+export function setTileGridExtent(
+  schema: TileSchemaJson,
+  gridId: string,
+  extent: { iCount: number; jCount: number },
+  options: { fallbackIsUnit: boolean },
+): TileGridResize {
+  const grid = findTileGrid(schema, gridId);
+  if (!grid) return { schema, lattice: 'unchanged', filled: 0, brokenDown: 0 };
+  const old = grid.extent;
+  const master = schema.masterGrids.find((m) => m.childId === gridId);
+
+  let lattice: TileGridResize['lattice'] = 'unchanged';
+  let nextMaster = master;
+  if (master && (old.iCount !== extent.iCount || old.jCount !== extent.jCount)) {
+    const alongI = stretchLattice(master.u, master.v, 'i', old.iCount, extent.iCount);
+    const both = alongI && stretchLattice(alongI.u, alongI.v, 'j', old.jCount, extent.jCount);
+    if (both) {
+      lattice = 'stretched';
+      nextMaster = { ...master, u: both.u, v: both.v };
+    } else {
+      lattice = 'kept';
+    }
+  }
+
+  const inside = (cell: IntVec2) =>
+    cell.i >= 0 && cell.j >= 0 && cell.i < extent.iCount && cell.j < extent.jCount;
+  const unit = (cell: IntVec2) =>
+    createTileGridInstance(grid.fallbackTileDefinitionId, cell.i, cell.j);
+
+  const instances: TileGridInstanceJson[] = [];
+  let brokenDown = 0;
+  for (const instance of grid.instances) {
+    const cells = instanceCells(instance);
+    const surviving = cells.filter(inside);
+    if (surviving.length === cells.length) instances.push(instance);
+    else if (options.fallbackIsUnit) {
+      instances.push(...surviving.map(unit));
+      brokenDown += surviving.length;
+    }
+  }
+
+  let filled = 0;
+  const wasFull = unclaimedCells(grid).length === 0;
+  if (options.fallbackIsUnit && lattice === 'stretched' && wasFull) {
+    for (const cell of extentCells(extent)) {
+      if (cell.i < old.iCount && cell.j < old.jCount) continue;
+      instances.push(unit(cell));
+      filled += 1;
+    }
+  }
+
+  return {
+    schema: {
+      ...schema,
+      tileGrids: schema.tileGrids.map((g) => (g.id === gridId ? { ...g, extent, instances } : g)),
+      masterGrids: schema.masterGrids.map((m) => (m.id === nextMaster?.id ? nextMaster : m)),
+    },
+    lattice,
+    filled,
+    brokenDown,
+  };
+}
+
+/**
+ * Empty a tile grid for repainting: no occurrences, and the lattice above it back to a plain
+ * block step without mirroring. Cell, joint, extent and the outer levels are kept.
+ */
+export function clearTileGrid(schema: TileSchemaJson, gridId: string): TileSchemaJson {
+  const grid = findTileGrid(schema, gridId);
+  if (!grid) return schema;
+  return {
+    ...schema,
+    tileGrids: schema.tileGrids.map((g) => (g.id === gridId ? { ...g, instances: [] } : g)),
+    masterGrids: schema.masterGrids.map((m) =>
+      m.childId === gridId
+        ? { ...m, ...blockStep(grid.extent), mirror: { x: 'none', y: 'none' } }
+        : m,
+    ),
+  };
+}

@@ -7,6 +7,7 @@ import {
   addMasterLevelAboveRoot,
   bestSpanForDrag,
   blockStep,
+  clearTileGrid,
   createMasterGrid,
   createTileGrid,
   createTileGridInstance,
@@ -25,6 +26,7 @@ import {
   removeInstanceAt,
   removeRootMasterLevel,
   setLevelExtent,
+  setTileGridExtent,
   sanitizeJoint,
   spanFor,
   spanOptions,
@@ -580,6 +582,38 @@ export function TileSchemaPage() {
     paintAt({ i: cell.i, j: cell.j, iSpan: 1, jSpan: 1 });
   };
 
+  /**
+   * Columns and rows go through `setTileGridExtent`, which carries u and v along with the
+   * block and keeps the cells claimed, so a repeat that tiled keeps tiling.
+   */
+  const resizeGrid = (extent: { iCount: number; jCount: number }) => {
+    if (!draft || !tileGrid) return;
+    const result = setTileGridExtent(draft, tileGrid.id, extent, { fallbackIsUnit });
+    setDraft(result.schema);
+    const fallbackName = fallbackTile?.name ?? 'the fallback';
+    const master = result.schema.masterGrids.find((m) => m.childId === tileGrid.id);
+    const moved = (['u', 'v'] as const)
+      .filter((w) => innerMaster && master && formatVec(innerMaster[w]) !== formatVec(master[w]))
+      .map((w) => `${w} ${formatVec(innerMaster![w])} → ${formatVec(master![w])}`);
+    const notes = [
+      result.lattice === 'stretched' && moved.length > 0 ? `${moved.join(', ')}.` : null,
+      result.lattice === 'kept'
+        ? 'The lattice is sheared, so u and v were left as they are — set them by hand.'
+        : null,
+      result.filled > 0 ? `${result.filled} new cell(s) filled with ${fallbackName}.` : null,
+      result.brokenDown > 0
+        ? `Tiles cut by the new edge were broken down into ${result.brokenDown} × ${fallbackName}.`
+        : null,
+    ].filter(Boolean);
+    setMessage(notes.length > 0 ? notes.join(' ') : null);
+  };
+
+  const clearTiles = () => {
+    if (!draft || !tileGrid) return;
+    setDraft(clearTileGrid(draft, tileGrid.id));
+    setMessage('Cleared. The project keeps its last working schema until the new repeat tiles.');
+  };
+
   const cellFill = (cell: IntVec2): CellFill | null => {
     if (!tileGrid) return null;
     const hit = instanceAtCell(tileGrid, cell.i, cell.j);
@@ -788,7 +822,7 @@ export function TileSchemaPage() {
                   <label>Columns</label>
                   <NumberField
                     value={tileGrid.extent.iCount}
-                    onChange={(iCount) => patchGrid({ extent: { ...tileGrid.extent, iCount } })}
+                    onChange={(iCount) => resizeGrid({ ...tileGrid.extent, iCount })}
                     min={1}
                     integer
                   />
@@ -797,7 +831,7 @@ export function TileSchemaPage() {
                   <label>Rows</label>
                   <NumberField
                     value={tileGrid.extent.jCount}
-                    onChange={(jCount) => patchGrid({ extent: { ...tileGrid.extent, jCount } })}
+                    onChange={(jCount) => resizeGrid({ ...tileGrid.extent, jCount })}
                     min={1}
                     integer
                   />
@@ -824,7 +858,22 @@ export function TileSchemaPage() {
                     })}
                   </select>
                 </div>
+                <div className="field" style={{ minWidth: 'auto', alignContent: 'end' }}>
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={clearTiles}
+                    disabled={tileGrid.instances.length === 0}
+                    title="Remove every tile and reset u and v to the block, keeping cell size, joint and extent"
+                  >
+                    Clear tiles
+                  </button>
+                </div>
               </div>
+              <p className="muted" style={{ marginTop: '0.25rem', fontSize: '0.8rem' }}>
+                u and v follow the block when it is a plain or bonded repeat; new cells take the
+                fallback tile, and a tile cut by a smaller block breaks down into it.
+              </p>
 
               <div className="row">
                 <div className="field" style={{ flex: 1 }}>
@@ -950,6 +999,7 @@ export function TileSchemaPage() {
                   ? 'Drag either arrow tip to a grid corner to set how the repeat steps. An axis that leaves the grid is normal — grow the ring to reach further.'
                   : "Drag to lay a tile — the footprint snaps to the format's real size, and the drag's shape picks upright or turned. Click an occurrence to remove it."}
               </p>
+              {message && <p className="muted" style={{ marginTop: '0.5rem' }}>{message}</p>}
             </>
           )}
 
@@ -1202,7 +1252,9 @@ export function TileSchemaPage() {
             ? 'Applied to the project and re-solved automatically — there is nothing to save.'
             : 'This draft is not being applied: the repeat does not tile, and the fill throws on a schema it cannot resolve. The project is still using the last version that worked.'}
         </p>
-        {message && <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>}
+        {message && !editingTileGrid && (
+          <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>
+        )}
 
         <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>Rapport shares</h3>
         <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
