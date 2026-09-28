@@ -70,10 +70,10 @@ export type BoundaryDrawCanvasProps = {
   heightPx?: number;
 };
 
-const FILL = { ccw: 'rgba(217,119,58,0.14)', cw: 'rgba(91,143,199,0.16)' } as const;
-const FILL_SELECTED = { ccw: 'rgba(217,119,58,0.34)', cw: 'rgba(91,143,199,0.38)' } as const;
+const FILL = { ccw: 'rgba(194,97,31,0.1)', cw: 'rgba(36,80,143,0.1)' } as const;
+const FILL_SELECTED = { ccw: 'rgba(194,97,31,0.26)', cw: 'rgba(36,80,143,0.26)' } as const;
 /** A loop still being drawn has no orientation yet, so it gets no role colour. */
-const NEUTRAL = '#b5a89a';
+const NEUTRAL = '#6b665d';
 
 /** Grab radius in screen pixels, so vertices are as easy to hit at any zoom. */
 const GRAB_PX = 8;
@@ -435,7 +435,7 @@ export function BoundaryDrawCanvas({
               cx={v.x}
               cy={-v.y}
               r={(isSelectedVertex || isCloseTarget ? 7 : 5) * mpp}
-              fill={isCloseTarget ? '#6f8f6a' : isSelectedVertex ? '#f3ebe1' : stroke}
+              fill={isCloseTarget ? '#3d6b35' : isSelectedVertex ? '#fbfaf7' : stroke}
               stroke="#1a1714"
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
@@ -466,7 +466,7 @@ export function BoundaryDrawCanvas({
         touchAction: 'none',
         userSelect: 'none',
         cursor,
-        background: '#1a1714',
+        background: '#fbfaf7',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -497,7 +497,7 @@ export function BoundaryDrawCanvas({
             y1={-bounds.minY}
             x2={x}
             y2={-bounds.maxY}
-            stroke={x === 0 ? 'rgba(181,168,154,0.5)' : 'rgba(74,64,54,0.55)'}
+            stroke={x === 0 ? '#b9b2a4' : '#e6e2da'}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
@@ -509,7 +509,7 @@ export function BoundaryDrawCanvas({
             y1={-y}
             x2={bounds.maxX}
             y2={-y}
-            stroke={y === 0 ? 'rgba(181,168,154,0.5)' : 'rgba(74,64,54,0.55)'}
+            stroke={y === 0 ? '#b9b2a4' : '#e6e2da'}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
@@ -524,7 +524,7 @@ export function BoundaryDrawCanvas({
           cy={-hover.y}
           r={3 * mpp}
           fill="none"
-          stroke="rgba(243,235,225,0.7)"
+          stroke="rgba(28,27,25,0.7)"
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"

@@ -16,7 +16,7 @@ export function TileColorEditor({
   return (
     <div className="field">
       <label>{label}</label>
-      <div className="row" style={{ gap: '0.5rem', marginBottom: '0.5rem' }}>
+      <div className="row gap-2 mb-2">
         <button
           type="button"
           className={value.mode === 'brightness' ? 'btn primary' : 'btn'}
@@ -40,14 +40,14 @@ export function TileColorEditor({
         </button>
       </div>
       {value.mode === 'brightness' ? (
-        <div className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+        <div className="row gap-2 center">
           <input
             type="color"
             value={value.color.startsWith('#') ? value.color : '#c4a574'}
             onChange={(e) => onChange({ mode: 'brightness', color: e.target.value })}
           />
           <span className="mono muted">{value.color}</span>
-          <span className="muted" style={{ fontSize: '0.8rem' }}>
+          <span className="muted small">
             SDF → brightness
           </span>
         </div>
@@ -56,8 +56,8 @@ export function TileColorEditor({
           const paletteColors = value.colors;
           const paletteC = value.c ?? DEFAULT_PALETTE_C;
           return (
-            <div className="stack" style={{ gap: '0.75rem' }}>
-              <div className="row" style={{ flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div className="stack">
+              <div className="row">
                 {(['a', 'b', 'd'] as const).map((name, i) => {
                   const hex = paletteColors[i]!;
                   return (
@@ -80,13 +80,13 @@ export function TileColorEditor({
                   );
                 })}
               </div>
-              <div className="stack" style={{ gap: '0.4rem' }}>
-                <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+              <div className="stack gap-2">
+                <p className="muted small m-0">
                   Quilez palette(t, a, b, c, d) — adjust c with sliders
                 </p>
                 {(['x', 'y', 'z'] as const).map((axis, i) => (
-                  <div key={axis} className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-                    <label className="mono" style={{ width: '2.5rem', margin: 0, fontSize: '0.8rem' }}>
+                  <div key={axis} className="row gap-2 center">
+                    <label className="mono" style={{ width: '2.5rem' }}>
                       c.{axis}
                     </label>
                     <input
@@ -95,14 +95,14 @@ export function TileColorEditor({
                       max={2}
                       step={0.01}
                       value={paletteC[i]!}
-                      style={{ flex: 1 }}
+                      className="range"
                       onChange={(e) => {
                         const next: [number, number, number] = [paletteC[0], paletteC[1], paletteC[2]];
                         next[i] = Number(e.target.value);
                         onChange({ mode: 'palette', colors: paletteColors, c: next });
                       }}
                     />
-                    <span className="mono muted" style={{ width: '3rem' }}>
+                    <span className="readout">
                       {paletteC[i]!.toFixed(2)}
                     </span>
                   </div>

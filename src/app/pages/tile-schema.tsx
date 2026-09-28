@@ -114,7 +114,7 @@ function AxisFields({
   const rowLabel = (which: 'u' | 'v') => (
     <span
       className="mono"
-      style={{ color: which === 'u' ? '#d9773a' : '#6f8f6a', fontWeight: 600 }}
+      style={{ color: which === 'u' ? 'var(--accent)' : 'var(--ok)', fontWeight: 600 }}
     >
       {which}
     </span>
@@ -127,7 +127,7 @@ function AxisFields({
         style={{
           display: 'grid',
           gridTemplateColumns: '1.25rem 1fr 1fr',
-          gap: '0.35rem',
+          gap: 'var(--s2)',
           alignItems: 'center',
         }}
       >
@@ -174,13 +174,13 @@ function ShareSliders({
   const total = tiles.reduce((sum, t) => sum + weightOf(t.id), 0);
 
   return (
-    <div className="stack" style={{ marginTop: '0.75rem' }}>
+    <div className="stack mt-3">
       {tiles.map((t) => {
         const weight = weightOf(t.id);
         const percent = total > 0 ? Math.round((weight / total) * 100) : 0;
         return (
-          <div key={t.id} className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-            <label className="mono" style={{ width: '8rem', margin: 0, fontSize: '0.8rem' }}>
+          <div key={t.id} className="row tight">
+            <label className="mono small m-0" style={{ width: '8rem' }}>
               {t.name}
             </label>
             <input
@@ -189,18 +189,16 @@ function ShareSliders({
               max={100}
               step={1}
               value={weight}
-              // A bare range renders a white track on this dark theme; the
-              // accent tints the filled part and the thumb to match the app.
-              style={{ flex: 1, accentColor: '#d9773a', background: 'transparent' }}
+              className="range"
               onChange={(e) => onChange({ ...shares, [t.id]: Number(e.target.value) })}
             />
-            <span className="mono" style={{ width: '3rem', textAlign: 'right', fontSize: '0.8rem' }}>
+            <span className="readout" style={{ textAlign: 'right' }}>
               {percent}%
             </span>
           </div>
         );
       })}
-      <p className="muted" style={{ fontSize: '0.8rem', margin: 0 }}>
+      <p className="muted small m-0">
         Relative weights — the search normalises them, so 50/50 and 10/10 ask for the same split.
       </p>
     </div>
@@ -621,7 +619,7 @@ export function TileSchemaPage() {
     const tile = tileMap.get(hit.tileDefinitionId);
     const isOrigin = hit.i === cell.i && hit.j === cell.j;
     return {
-      fill: tile ? tileDisplayColor(tile.color) : '#c45c5c',
+      fill: tile ? tileDisplayColor(tile.color) : '#a33a2a',
       stroke: '#1a1714',
       label: isOrigin ? tileInitials(tile?.name) : undefined,
     };
@@ -682,7 +680,7 @@ export function TileSchemaPage() {
           {tiles.length > 0 && (
             <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
           )}
-          <div className="row" style={{ marginTop: '0.75rem' }}>
+          <div className="row mt-3">
             <button type="button" className="btn primary" onClick={createBlank} disabled={tiles.length === 0}>
               Create blank
             </button>
@@ -692,10 +690,10 @@ export function TileSchemaPage() {
           </div>
           {presets.length > 0 && (
             <>
-              <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>
+              <h3 style={{ margin: 'var(--s4) 0 0', fontSize: '0.9rem' }}>
                 Start from a known bond
               </h3>
-              <div className="row" style={{ marginTop: '0.5rem' }}>
+              <div className="row mt-2">
                 {presets.map((pattern) => (
                   <button
                     key={pattern.id}
@@ -711,11 +709,11 @@ export function TileSchemaPage() {
             </>
           )}
           {tiles.length === 0 && (
-            <p className="error" style={{ marginTop: '0.75rem' }}>
+            <p className="error mt-3">
               Define at least one tile first.
             </p>
           )}
-          {message && <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>}
+          {message && <p className="muted mt-3">{message}</p>}
         </section>
         <JointPanel
           width={ui.newSchemaJoint}
@@ -770,7 +768,7 @@ export function TileSchemaPage() {
               </button>
             )}
           </div>
-          <div className="row" style={{ marginTop: '0.75rem' }}>
+          <div className="row mt-3">
             <button type="button" className="btn" onClick={addLevel}>
               Add level
             </button>
@@ -778,7 +776,7 @@ export function TileSchemaPage() {
               Remove level
             </button>
           </div>
-          <p className="muted" style={{ marginTop: '0.75rem', fontSize: '0.8rem' }}>
+          <p className="muted small mt-3">
             ◆ is the root — it tiles the plane and has no extent. Levels below it are finite blocks.
           </p>
         </section>
@@ -877,7 +875,7 @@ export function TileSchemaPage() {
                   </button>
                 </div>
               </div>
-              <p className="muted" style={{ marginTop: '0.25rem', fontSize: '0.8rem' }}>
+              <p className="muted small mt-1">
                 u and v follow the block when it is a plain or bonded repeat; new cells take the
                 fallback tile, and a tile cut by a smaller block breaks down into it.
               </p>
@@ -911,7 +909,7 @@ export function TileSchemaPage() {
                 </div>
               </div>
               {!declaredIsUnit && fallbackTile && (
-                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                <p className="warn mt-2">
                   {declaredFallback
                     ? `${declaredFallback.name} covers more than one cell, so ${fallbackTile.name} stands in for it.`
                     : `The fallback tile was removed from the catalogue, so ${fallbackTile.name} stands in for it.`}{' '}
@@ -925,20 +923,20 @@ export function TileSchemaPage() {
                 </p>
               )}
               {!fallbackTile && (
-                <p className="error" style={{ marginTop: '0.5rem' }}>
+                <p className="error mt-2">
                   No format in the catalogue covers one cell at this cell size, so clipped tiles
                   would leave the boundary bare. A format up to half a cell smaller than the cell
                   still counts — it is centred and the joints around it widen.
                 </p>
               )}
               {paintTile && footprints.length === 0 && (
-                <p className="error" style={{ marginTop: '0.5rem' }}>
+                <p className="error mt-2">
                   {describeFit(paintTile.name, fitTile(paintTile, tileGrid.cell, tileGrid.joint, false))}{' '}
                   Change the cell size or the joint.
                 </p>
               )}
               {paintTile && footprints.length > 0 && footprints.every((o) => o.fit === 'under') && (
-                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                <p className="warn mt-2">
                   {paintTile.name} is{' '}
                   {formatMm(Math.max(footprints[0]!.slack.x, footprints[0]!.slack.y))} under its{' '}
                   {footprints[0]!.iSpan}×{footprints[0]!.jSpan} footprint. It is centred, so the
@@ -946,7 +944,7 @@ export function TileSchemaPage() {
                 </p>
               )}
 
-              <div className="row" style={{ marginTop: '0.75rem' }}>
+              <div className="row mt-3">
                 <label className="field" style={{ minWidth: 'auto' }}>
                   <span>Edit axes</span>
                   <input
@@ -966,7 +964,7 @@ export function TileSchemaPage() {
                   />
                   <div className="field">
                     <label>Ring</label>
-                    <div className="row" style={{ gap: '0.25rem' }}>
+                    <div className="row gap-1">
                       <button type="button" className="btn" onClick={() => setPad(Math.max(1, pad - 1))}>
                         −
                       </button>
@@ -985,10 +983,9 @@ export function TileSchemaPage() {
               )}
 
               <div
-                className="canvas-frame"
+                className="canvas-frame mt-4"
                 style={{
-                  marginTop: '1rem',
-                  padding: '1rem',
+                  padding: 'var(--s4)',
                   // The axes deliberately leave the grid, so the frame must stop
                   // clipping while they are on.
                   overflow: axesOn ? 'visible' : 'auto',
@@ -1012,12 +1009,12 @@ export function TileSchemaPage() {
                   }
                 />
               </div>
-              <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+              <p className="note">
                 {axesOn
                   ? 'Drag either arrow tip to a grid corner to set how the repeat steps. An axis that leaves the grid is normal — grow the ring to reach further.'
                   : "Drag to lay a tile — the footprint snaps to the format's real size, and the drag's shape picks upright or turned. Click an occurrence to remove it."}
               </p>
-              {message && <p className="muted" style={{ marginTop: '0.5rem' }}>{message}</p>}
+              {message && <p className="muted mt-2">{message}</p>}
             </>
           )}
 
@@ -1064,7 +1061,7 @@ export function TileSchemaPage() {
               </div>
 
               {(!mirrorable.x || !mirrorable.y) && (
-                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                <p className="warn mt-2">
                   Mirroring is unavailable in{' '}
                   {!mirrorable.x && !mirrorable.y ? 'x and y' : !mirrorable.x ? 'x' : 'y'}: the
                   repeat is not symmetric across that axis, so reflecting it would move cells rather
@@ -1097,7 +1094,7 @@ export function TileSchemaPage() {
                       integer
                     />
                   </div>
-                  <p className="muted" style={{ flex: 1, fontSize: '0.8rem' }}>
+                  <p className="muted small grow">
                     Changing the block retargets the level above it, unless you have already
                     hand-tuned that level's vectors.
                   </p>
@@ -1112,7 +1109,7 @@ export function TileSchemaPage() {
                 />
                 <div className="field">
                   <label>Ring</label>
-                  <div className="row" style={{ gap: '0.25rem' }}>
+                  <div className="row gap-1">
                     <button type="button" className="btn" onClick={() => setPad(Math.max(1, pad - 1))}>
                       −
                     </button>
@@ -1126,7 +1123,7 @@ export function TileSchemaPage() {
                 </div>
               </div>
 
-              <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
+              <div className="canvas-frame mt-4" style={{ padding: 'var(--s4)' }}>
                 <TileGridCanvas
                   extent={canvasExtent}
                   pad={pad}
@@ -1136,7 +1133,7 @@ export function TileSchemaPage() {
                   onLatticeChange={(which, value) => patchMaster(activeMaster.id, { [which]: value })}
                 />
               </div>
-              <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+              <p className="note">
                 Drag either arrow tip to a grid corner. One cell here is one copy of{' '}
                 {findTileGrid(draft, activeMaster.childId)?.name ??
                   findMasterGrid(draft, activeMaster.childId)?.name ??
@@ -1147,7 +1144,7 @@ export function TileSchemaPage() {
               </p>
 
               {levelCheck && !levelCheck.ok && (
-                <p className="muted" style={{ marginTop: '0.5rem', color: '#d9773a' }}>
+                <p className="warn mt-2">
                   This level's block does not tile on its own: {levelCheck.reason}. That can still be
                   fine inside a larger schema — the repeat panel below decides.
                 </p>
@@ -1197,7 +1194,7 @@ export function TileSchemaPage() {
         )}
 
         {preview && preview.stats.fallbackSubstitutedFor && (
-          <p className="muted" style={{ color: '#d9773a' }}>
+          <p className="warn">
             The declared fallback covers more than one cell, so a one-cell format stood in for it.
             Set the fallback explicitly to control which.
           </p>
@@ -1219,7 +1216,7 @@ export function TileSchemaPage() {
         )}
         {preview && (
           <>
-            <div className="canvas-frame" style={{ marginTop: '1rem', padding: '1rem' }}>
+            <div className="canvas-frame mt-4" style={{ padding: 'var(--s4)' }}>
               <InstanceSvg
                 instance={preview.instance}
                 tiles={tiles}
@@ -1227,7 +1224,7 @@ export function TileSchemaPage() {
                 joint={projectForJoint.joint}
               />
             </div>
-            <p className="muted" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+            <p className="note">
               {preview.stats.wholeTiles} whole, {preview.stats.fallbackTiles} broken down,{' '}
               {preview.stats.cutTiles} cut across {preview.stats.cells} cells. Drawn through the real
               fill, so this is what the solver will produce.
@@ -1265,22 +1262,22 @@ export function TileSchemaPage() {
             Clear schema
           </button>
         </div>
-        <p className="muted" style={{ marginTop: '0.75rem' }}>
+        <p className="muted mt-3">
           {valid
             ? 'Applied to the project and re-solved automatically — there is nothing to save.'
             : 'This draft is not being applied: the repeat does not tile, and the fill throws on a schema it cannot resolve. The project is still using the last version that worked.'}
         </p>
         {message && !editingTileGrid && (
-          <p className="muted" style={{ marginTop: '0.75rem' }}>{message}</p>
+          <p className="muted mt-3">{message}</p>
         )}
 
-        <h3 style={{ marginTop: '1.25rem', marginBottom: 0, fontSize: '0.9rem' }}>Rapport shares</h3>
+        <h3 style={{ margin: 'var(--s4) 0 0', fontSize: '0.9rem' }}>Rapport shares</h3>
         <ShareSliders tiles={tiles} shares={shares} onChange={setShares} />
       </section>
 
       <section className="panel no-print">
         <h2>Assist with LLM</h2>
-        <p className="muted" style={{ fontSize: '0.8rem' }}>
+        <p className="muted small">
           The model replies in the grid notation, not JSON — a tenth the tokens, and a miscounted
           row comes back as a parse error naming the cell instead of a malformed document.
         </p>
@@ -1292,7 +1289,7 @@ export function TileSchemaPage() {
             onChange={(e) => patchUi({ schemaPrompt: e.target.value })}
           />
         </div>
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="row mt-3">
           <button
             type="button"
             className="btn primary"
@@ -1313,8 +1310,8 @@ export function TileSchemaPage() {
             </button>
           ))}
         </div>
-        {assistError && <p className="error" style={{ marginTop: '0.75rem' }}>{assistError}</p>}
-        <div className="field" style={{ marginTop: '0.75rem' }}>
+        {assistError && <p className="error mt-3">{assistError}</p>}
+        <div className="field mt-3">
           <label>Pattern notation</label>
           <textarea
             className="mono"
@@ -1325,7 +1322,7 @@ export function TileSchemaPage() {
             onChange={(e) => patchUi({ schemaNotation: e.target.value })}
           />
         </div>
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="row mt-3">
           <button
             type="button"
             className="btn"
@@ -1355,7 +1352,7 @@ export function TileSchemaPage() {
             onChange={(e) => setRaw(e.target.value)}
           />
         </div>
-        <div className="row" style={{ marginTop: '0.75rem' }}>
+        <div className="row mt-3">
           <button
             type="button"
             className="btn primary"
@@ -1384,7 +1381,7 @@ export function TileSchemaPage() {
             Reset editor
           </button>
         </div>
-        {rawError && <p className="error" style={{ marginTop: '0.75rem' }}>{rawError}</p>}
+        {rawError && <p className="error mt-3">{rawError}</p>}
       </section>
     </div>
   );

@@ -392,6 +392,12 @@ textarea {
   font-size: 16px;
 }
 
+.field input[type='range'] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .field textarea {
   min-height: 5rem;
   resize: vertical;
@@ -1112,4 +1118,160 @@ svg.icon {
   .sticky-preview .fluid-svg {
     width: clamp(6.5rem, 38vw, 10rem);
   }
+}
+
+/* ---- Component helpers: editors, inspector, SDF tree ---- */
+
+/* `.mono` is declared after `.small`/`.tiny` and sets its own size, so pin the pairs. */
+.mono.small {
+  font-size: 0.8rem;
+}
+
+.mono.tiny {
+  font-size: 0.75rem;
+}
+
+/* `.panel h2` outranks a bare `.m-0`. */
+.panel .m-0 {
+  margin: 0;
+}
+
+/* Grow without `.grow`'s min-width: 0, so a `.field` keeps its min width and wraps. */
+.flex-1 {
+  flex: 1;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A readout whose text length changes while dragging; a fixed slot keeps the slider still. */
+.readout.wide {
+  min-width: 4rem;
+}
+
+/* SDF inspector: a label column, then the control. */
+.param-label {
+  flex: 0 1 7rem;
+  width: 7rem;
+  min-width: 3rem;
+  margin: 0;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.param-hint {
+  margin: 0 0 0 calc(7rem + var(--s2));
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* A compact number/select box beside a slider; stays outside `.field`. */
+.num-input {
+  flex: 0 1 5rem;
+  width: 5rem;
+  min-width: 3.5rem;
+  padding: var(--s1);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.num-input.flex-1 {
+  flex: 1;
+  width: auto;
+}
+
+.stepper-value {
+  min-width: 2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* SDF tree rows; the per-depth indent stays inline. */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  text-align: left;
+  padding: var(--s1) var(--s2);
+  min-height: 0;
+}
+
+.tree-row.primary .muted,
+.tree-row.primary .pill {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.tree-slot {
+  flex: 0 0 1.1rem;
+  width: 1.1rem;
+}
+
+/* Colour comes from a `.sev-*` class on the same element. */
+.sev-dot {
+  flex: 0 0 0.5rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.sdf-thumb {
+  display: block;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+  image-rendering: pixelated;
+}
+
+/* Op reference gallery. */
+.op-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
+  gap: var(--s2);
+}
+
+.op-card {
+  display: flex;
+  gap: var(--s2);
+  min-width: 0;
+  padding: var(--s2);
+  border: 1px solid var(--line);
+}
+
+/* A small colour chip before a label; the fill is data, set inline. */
+.swatch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--line-strong);
+}
+
+.collapsible > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: revert;
+}
+
+.collapsible-note {
+  margin-left: var(--s2);
+  font-weight: 400;
 }

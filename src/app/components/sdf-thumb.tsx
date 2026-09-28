@@ -59,14 +59,8 @@ export function SdfThumb({
       width={size}
       height={size}
       title={title}
-      style={{
-        width: size,
-        height: size,
-        flex: `0 0 ${size}px`,
-        border: '1px solid #4a4036',
-        imageRendering: 'pixelated',
-        display: 'block',
-      }}
+      className="sdf-thumb"
+      style={{ width: size, height: size, flex: `0 0 ${size}px` }}
     />
   );
 }

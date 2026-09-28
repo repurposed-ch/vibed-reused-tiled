@@ -309,8 +309,8 @@ export type Orientation = 'ccw' | 'cw';
  * standard colour-blind-safe pair, which is why no arrowheads are needed.
  */
 export const ORIENTATION_STROKE: Record<Orientation, string> = {
-  ccw: '#d9773a',
-  cw: '#5b8fc7',
+  ccw: '#c2611f',
+  cw: '#24508f',
 };
 
 export function orientationOf(loop: Loop): Orientation {

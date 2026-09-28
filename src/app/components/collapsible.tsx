@@ -21,19 +21,19 @@ export function Collapsible({
   const [open, setOpen] = useState(defaultOpen);
   return (
     <details
-      className="panel no-print"
+      className="panel no-print collapsible"
       open={open}
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary style={{ cursor: 'pointer', fontWeight: 600, listStyle: 'revert' }}>
+      <summary>
         {title}
         {note !== undefined && note !== null && (
-          <span className="muted" style={{ fontWeight: 400, marginLeft: '0.5rem', fontSize: '0.8rem' }}>
+          <span className="muted small collapsible-note">
             {note}
           </span>
         )}
       </summary>
-      {open && <div style={{ marginTop: '0.75rem' }}>{children}</div>}
+      {open && <div className="mt-3">{children}</div>}
     </details>
   );
 }

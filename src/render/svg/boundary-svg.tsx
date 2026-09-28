@@ -49,7 +49,7 @@ export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJs
       {regionPath && (
         <path
           d={regionPath}
-          fill="rgba(217,119,58,0.28)"
+          fill="rgba(194,97,31,0.16)"
           fillRule="evenodd"
           stroke={ORIENTATION_STROKE.ccw}
           strokeWidth={0.03}
@@ -100,7 +100,7 @@ export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJs
                 y1={from.y}
                 x2={to.x}
                 y2={to.y}
-                stroke="#6f8f6a"
+                stroke="#3d6b35"
                 strokeWidth={0.04}
                 strokeDasharray="0.08 0.06"
               />
@@ -108,7 +108,7 @@ export function BoundaryPaths({ boundaries }: { boundaries: BoundaryConditionsJs
                   +0.08 now sits above the line, since +Y is up. */}
               <text
                 transform={`translate(${from.x} ${from.y + 0.08}) scale(1,-1)`}
-                fill="#6f8f6a"
+                fill="#3d6b35"
                 fontSize={0.12}
               >
                 {guide.name}

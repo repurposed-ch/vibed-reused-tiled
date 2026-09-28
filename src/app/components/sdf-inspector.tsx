@@ -9,61 +9,22 @@ import {
   type ParamMeta,
   type SdfPath,
   type SeamIssue,
-  type SeamSeverity,
 } from '@/render/materials';
 import { NumberField } from './number-field';
 
-const SEVERITY_COLOR: Record<SeamSeverity, string> = {
-  error: '#c45c5c',
-  warning: '#d9773a',
-  info: '#b5a89a',
-};
-
-const LABEL_W = '7rem';
-
-/** Range inputs must stay outside `.field` — its padding/border wrecks the track. */
-/** `minWidth: 0` matters: a range input has an intrinsic width it will not shrink below. */
-const RANGE_STYLE = { flex: 1, minWidth: 0, accentColor: '#d9773a', background: 'transparent' } as const;
-
-const NUM_STYLE = {
-  width: '5rem',
-  flex: '0 1 5rem',
-  minWidth: '3.5rem',
-  background: '#1a1714',
-  border: '1px solid #4a4036',
-  color: '#f3ebe1',
-  padding: '0.3rem 0.35rem',
-  fontSize: '0.78rem',
-  fontFamily: 'Fragment Mono, monospace',
-} as const;
+/*
+ * Range inputs must stay outside `.field` — its padding/border wrecks the track. `.range`
+ * carries `min-width: 0`, which matters: a range input has an intrinsic width it will not
+ * shrink below.
+ */
 
 function ParamLabel({ text }: { text: string }) {
-  return (
-    <label
-      className="mono muted"
-      style={{
-        width: LABEL_W,
-        flex: `0 1 ${LABEL_W}`,
-        minWidth: '3rem',
-        fontSize: '0.72rem',
-        margin: 0,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {text}
-    </label>
-  );
+  return <label className="mono muted param-label">{text}</label>;
 }
 
 function Hint({ text }: { text?: string }) {
   if (!text) return null;
-  return (
-    <p className="muted" style={{ margin: '0 0 0 7.5rem', fontSize: '0.7rem' }}>
-      {text}
-    </p>
-  );
+  return <p className="param-hint">{text}</p>;
 }
 
 function NumberControl({
@@ -77,7 +38,7 @@ function NumberControl({
 }) {
   return (
     <>
-      <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text={param.label} />
         <input
           type="range"
@@ -85,7 +46,7 @@ function NumberControl({
           max={param.max}
           step={param.step}
           value={value}
-          style={RANGE_STYLE}
+          className="range"
           onChange={(e) => onChange(Number(e.target.value))}
         />
         <NumberField
@@ -95,7 +56,7 @@ function NumberControl({
           max={param.max}
           step={param.step}
           format={(v) => String(Number(v.toFixed(4)))}
-          style={NUM_STYLE}
+          className="num-input"
         />
       </div>
       <Hint text={param.hint} />
@@ -114,7 +75,7 @@ function IntControl({
 }) {
   return (
     <>
-      <div className="row" style={{ alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text={param.label} />
         <button
           type="button"
@@ -124,7 +85,7 @@ function IntControl({
         >
           −
         </button>
-        <span className="mono" style={{ minWidth: '2rem', textAlign: 'center' }}>
+        <span className="mono stepper-value">
           {value}
         </span>
         <button
@@ -156,7 +117,7 @@ function Vec2Control({
 }) {
   return (
     <>
-      <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text={label} />
         {([0, 1] as const).map((i) => (
           <NumberField
@@ -169,7 +130,7 @@ function Vec2Control({
             }}
             step={step}
             format={(v) => String(Number(v.toFixed(4)))}
-            style={NUM_STYLE}
+            className="num-input"
           />
         ))}
       </div>
@@ -193,7 +154,7 @@ function QuarterTurnControl({
   const offLattice = Math.abs(value - quarters * (Math.PI / 2)) > 1e-6;
   return (
     <>
-      <div className="row" style={{ alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text="Angle" />
         {[0, 1, 2, 3].map((q) => {
           const needsSquare = q % 2 === 1 && !isSquareTile;
@@ -201,8 +162,7 @@ function QuarterTurnControl({
             <button
               key={q}
               type="button"
-              className={!offLattice && normalized === q ? 'btn primary' : 'btn'}
-              style={{ padding: '0.35rem 0.5rem' }}
+              className={!offLattice && normalized === q ? 'btn sm primary' : 'btn sm'}
               title={needsSquare ? '90°/270° need a square tile — they swap axes' : undefined}
               onClick={() => onChange(q * (Math.PI / 2))}
             >
@@ -236,26 +196,24 @@ function ScaleFactorControl({
   const unsafe = pair.some((f) => !(f > 0) || Math.abs(1 / f - Math.round(1 / f)) > 1e-6);
   return (
     <>
-      <div className="row" style={{ alignItems: 'center', gap: '0.35rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text="Factor" />
         <button
           type="button"
-          className={perAxis ? 'btn' : 'btn primary'}
-          style={{ padding: '0.35rem 0.5rem' }}
+          className={perAxis ? 'btn sm' : 'btn sm primary'}
           onClick={() => onChange(pair[0])}
         >
           Uniform
         </button>
         <button
           type="button"
-          className={perAxis ? 'btn primary' : 'btn'}
-          style={{ padding: '0.35rem 0.5rem' }}
+          className={perAxis ? 'btn sm primary' : 'btn sm'}
           onClick={() => onChange([pair[0], pair[1]])}
         >
           Per axis
         </button>
       </div>
-      <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+      <div className="row tight">
         <ParamLabel text={perAxis ? '1 / (x, y)' : '1 / m'} />
         {(perAxis ? [0, 1] : [0]).map((i) => (
           <NumberField
@@ -270,7 +228,7 @@ function ScaleFactorControl({
             max={64}
             step={1}
             integer
-            style={NUM_STYLE}
+            className="num-input"
           />
         ))}
       </div>
@@ -315,11 +273,11 @@ function Control({
     case 'enum':
       return (
         <>
-          <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+          <div className="row tight">
             <ParamLabel text={param.label} />
             <select
               value={typeof raw === 'string' ? raw : param.fallback}
-              style={{ ...NUM_STYLE, width: 'auto', flex: 1 }}
+              className="num-input flex-1"
               onChange={(e) => set(e.target.value)}
             >
               {param.options.map((o) => (
@@ -335,7 +293,7 @@ function Control({
     case 'bool':
       return (
         <>
-          <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+          <div className="row tight">
             <ParamLabel text={param.label} />
             <input
               type="checkbox"
@@ -405,36 +363,32 @@ export function SdfInspector({
   const mine = issues.filter((i) => pathsEqual(i.path, path));
 
   return (
-    <div className="stack" style={{ gap: '0.6rem' }}>
-      <div className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1rem' }}>{meta.label}</h2>
+    <div className="stack gap-2">
+      <div className="row gap-2 center">
+        <h2 className="m-0">{meta.label}</h2>
         <span className="pill">{CATEGORY_LABEL[meta.category]}</span>
         <span className="pill" title={meta.returns === 'distance' ? 'Wrap in fill or band to use as a shade' : 'Already a 0..1 shade'}>
           {meta.returns === 'distance' ? 'returns distance' : 'returns 0..1'}
         </span>
       </div>
 
-      <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+      <p className="muted small m-0">
         {meta.summary}
       </p>
 
       {mine.length > 0 && (
-        <ul className="stack" style={{ gap: '0.25rem', margin: 0, paddingLeft: '1rem' }}>
+        <ul className="issues">
           {mine.map((issue, i) => (
-            <li
-              key={i}
-              className="mono"
-              style={{ fontSize: '0.72rem', color: SEVERITY_COLOR[issue.severity] }}
-            >
+            <li key={i} className={`mono tiny sev-${issue.severity}`}>
               <strong>{issue.severity}</strong> — {issue.message}
             </li>
           ))}
         </ul>
       )}
 
-      <div className="stack" style={{ gap: '0.45rem' }}>
+      <div className="stack gap-2">
         {meta.params.length === 0 ? (
-          <p className="muted" style={{ margin: 0, fontSize: '0.78rem' }}>
+          <p className="muted small m-0">
             No parameters — this op is defined entirely by its inputs.
           </p>
         ) : (
@@ -450,8 +404,8 @@ export function SdfInspector({
         )}
       </div>
 
-      <div className="row" style={{ gap: '0.5rem', alignItems: 'end' }}>
-        <div className="field" style={{ flex: 1 }}>
+      <div className="row gap-2">
+        <div className="field flex-1">
           <label>Change op</label>
           <select value={node.op} onChange={(e) => onChangeOp(e.target.value as SdfOp)}>
             {CATEGORY_ORDER.map((category) => (
@@ -465,7 +419,7 @@ export function SdfInspector({
             ))}
           </select>
         </div>
-        <div className="field" style={{ flex: 1 }}>
+        <div className="field flex-1">
           <label>Wrap in</label>
           <select
             value=""
@@ -493,7 +447,7 @@ export function SdfInspector({
           Remove
         </button>
       </div>
-      <p className="muted" style={{ margin: 0, fontSize: '0.7rem' }}>
+      <p className="muted tiny m-0">
         Remove promotes this node&rsquo;s first input into its place.
       </p>
     </div>

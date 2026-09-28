@@ -97,7 +97,7 @@ export function TilePreview({
         rx={cornerRadiusMetres(tile) * scale}
         ry={cornerRadiusMetres(tile) * scale}
         fill={textureUrl ? `url(#${patternId})` : fallback}
-        stroke="#f3ebe1"
+        stroke="#1c1b19"
         strokeWidth={1.5}
       />
       {showRhythm &&
@@ -118,11 +118,11 @@ export function TilePreview({
               key={side}
               x={pos.x}
               y={pos.y}
-              fill="#b5a89a"
+              fill="#6b665d"
               fontSize={11}
               textAnchor="middle"
               dominantBaseline="middle"
-              fontFamily="Fragment Mono, monospace"
+              fontFamily="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
             >
               {label}
             </text>

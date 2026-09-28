@@ -12,12 +12,6 @@ import {
 } from '@/render/materials';
 import { SdfThumb } from './sdf-thumb';
 
-const SEVERITY_COLOR: Record<SeamSeverity, string> = {
-  error: '#c45c5c',
-  warning: '#d9773a',
-  info: '#b5a89a',
-};
-
 const SLOT_LABEL: Record<string, string> = { child: '↳', a: 'A', b: 'B' };
 
 /** Worst severity among issues attached to exactly this node. */
@@ -52,7 +46,7 @@ export function SdfTree({
   const entries = listNodes(root);
 
   return (
-    <div className="stack" style={{ gap: '0.25rem' }}>
+    <div className="stack gap-1">
       {entries.map(({ path, node, depth, slot }) => {
         const isSelected = pathsEqual(path, selected);
         const severity = severityAt(issues, path);
@@ -62,42 +56,18 @@ export function SdfTree({
           <button
             key={pathKey(path)}
             type="button"
-            className={isSelected ? 'btn primary' : 'btn'}
+            className={isSelected ? 'btn tree-row primary' : 'btn tree-row'}
             onClick={() => onSelect(path)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              textAlign: 'left',
-              padding: '0.3rem 0.5rem',
-              minHeight: 0,
-              marginLeft: `${depth * 1.1}rem`,
-            }}
+            style={{ marginLeft: `${depth * 1.1}rem` }}
           >
             <SdfThumb node={node} seed={seed} period={period} size={34} />
-            <span
-              className="mono muted"
-              style={{ width: '1.1rem', flex: '0 0 1.1rem', fontSize: '0.75rem' }}
-            >
+            <span className="mono muted tiny tree-slot">
               {slot ? SLOT_LABEL[slot] : ''}
             </span>
-            <span style={{ minWidth: 0, flex: 1 }}>
-              <span className="mono" style={{ fontSize: '0.82rem' }}>
-                {meta.label}
-              </span>
+            <span className="grow">
+              <span className="mono">{meta.label}</span>
               {summary && (
-                <span
-                  className="mono muted"
-                  style={{
-                    fontSize: '0.72rem',
-                    display: 'block',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {summary}
-                </span>
+                <span className="mono muted tiny truncate">{summary}</span>
               )}
             </span>
             {meta.returns === 'distance' && (
@@ -107,14 +77,8 @@ export function SdfTree({
             )}
             {severity && (
               <span
+                className={`sev-dot sev-${severity}`}
                 title={issues.filter((i) => pathsEqual(i.path, path)).map((i) => i.message).join('\n')}
-                style={{
-                  width: '0.5rem',
-                  height: '0.5rem',
-                  flex: '0 0 0.5rem',
-                  borderRadius: '50%',
-                  background: SEVERITY_COLOR[severity],
-                }}
               />
             )}
           </button>

@@ -51,28 +51,18 @@ const COMMIT_MS = 200;
 const SEAM_OK = 1e-6;
 const SEAM_WARN = 1e-3;
 
-const SEVERITY_COLOR: Record<string, string> = {
-  error: '#c45c5c',
-  warning: '#d9773a',
-  info: '#b5a89a',
-};
-
 function SeamIssues({ issues }: { issues: SeamIssue[] }) {
   if (issues.length === 0) {
     return (
-      <p className="muted mono" style={{ fontSize: '0.72rem', margin: 0 }}>
+      <p className="muted mono tiny m-0">
         No seamlessness issues.
       </p>
     );
   }
   return (
-    <ul className="stack" style={{ gap: '0.3rem', margin: 0, paddingLeft: '1rem' }}>
+    <ul className="issues">
       {issues.map((issue, i) => (
-        <li
-          key={`${issue.op}-${i}`}
-          className="mono"
-          style={{ fontSize: '0.72rem', color: SEVERITY_COLOR[issue.severity] }}
-        >
+        <li key={`${issue.op}-${i}`} className={`mono tiny sev-${issue.severity}`}>
           <strong>{issue.severity}</strong> · {issue.op}
           {issue.path.length > 0 && <span className="muted"> @{issue.path.join('.')}</span>} —{' '}
           {issue.message}
@@ -208,8 +198,8 @@ export function MaterialEditor({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey, material.seed, period]);
-  const seamColor =
-    seam === null ? '#b5a89a' : seam <= SEAM_OK ? '#6f8f6a' : seam <= SEAM_WARN ? '#d9773a' : '#c45c5c';
+  const seamClass =
+    seam === null ? undefined : seam <= SEAM_OK ? 'ok' : seam <= SEAM_WARN ? 'warn' : 'sev-error';
 
   // A stored path can point at a node that no longer exists after an edit.
   const selectedPath: SdfPath = useMemo(() => {
@@ -244,7 +234,7 @@ export function MaterialEditor({
   };
 
   return (
-    <div className="stack" style={{ gap: 0 }}>
+    <div className="stack gap-0">
       <div className="sticky-preview no-print">
         <MaterialThumb
           material={previewMaterial}
@@ -255,24 +245,22 @@ export function MaterialEditor({
           size={256}
           alt={`${material.name} preview`}
         />
-        <div className="stack sticky-preview-controls" style={{ gap: '0.5rem' }}>
+        <div className="stack gap-2 sticky-preview-controls">
           <div className="field">
             <label>Name</label>
             <input value={material.name} onChange={(e) => updateMaterial({ name: e.target.value })} />
           </div>
-          <div className="row" style={{ gap: '0.35rem', alignItems: 'center' }}>
+          <div className="row gap-2 center">
             <button
               type="button"
-              className={litPreview ? 'btn' : 'btn primary'}
-              style={{ padding: '0.35rem 0.6rem', minHeight: 0 }}
+              className={litPreview ? 'btn sm' : 'btn sm primary'}
               onClick={() => setLitPreview(false)}
             >
               Flat
             </button>
             <button
               type="button"
-              className={litPreview ? 'btn primary' : 'btn'}
-              style={{ padding: '0.35rem 0.6rem', minHeight: 0 }}
+              className={litPreview ? 'btn sm primary' : 'btn sm'}
               title="Shade the preview with the normal map derived from this field"
               onClick={() => setLitPreview(true)}
             >
@@ -280,15 +268,14 @@ export function MaterialEditor({
             </button>
             <button
               type="button"
-              className="btn"
-              style={{ padding: '0.35rem 0.6rem', minHeight: 0 }}
+              className="btn sm"
               onClick={() => updateMaterial({ seed: (Math.random() * 1e9) | 0 })}
             >
               Reseed
             </button>
           </div>
-          <div className="mono muted" style={{ fontSize: '0.68rem', display: 'grid', gap: '0.15rem' }}>
-            <span style={{ color: seamColor }}>
+          <div className="stack gap-0 mono muted tiny">
+            <span className={seamClass}>
               {seam === null ? 'seam —' : seam <= SEAM_OK ? 'seam exact' : `seam ${seam.toFixed(4)}`}
             </span>
             <span>
@@ -309,7 +296,7 @@ export function MaterialEditor({
               selected={selectedPath}
               onSelect={selectPath}
             />
-            <div className="panel" style={{ marginBottom: 0 }}>
+            <div className="panel m-0">
               <SdfInspector
                 node={selectedNode}
                 path={selectedPath}
@@ -329,8 +316,8 @@ export function MaterialEditor({
         title="Surface"
         note={`relief ${(surface.relief * 1000).toFixed(2)} mm · rough ${surface.roughness[0].toFixed(2)}–${surface.roughness[1].toFixed(2)}`}
       >
-        <div className="stack" style={{ gap: '0.4rem' }}>
-          <p className="muted" style={{ margin: 0, fontSize: '0.72rem' }}>
+        <div className="stack gap-2">
+          <p className="muted tiny m-0">
             The normal and roughness maps are derived from this same field — its gradient is the
             relief, its value picks the roughness. Negative relief engraves: bright areas sink, so a
             light joint line reads as recessed.
@@ -366,13 +353,8 @@ export function MaterialEditor({
               },
             ] as const
           ).map((c) => (
-            <div key={c.label} className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
-              <label
-                className="mono muted"
-                style={{ width: '6.5rem', flex: '0 1 6.5rem', minWidth: '3rem', fontSize: '0.72rem', margin: 0 }}
-              >
-                {c.label}
-              </label>
+            <div key={c.label} className="row tight">
+              <label className="mono muted param-label">{c.label}</label>
               {/* Range inputs stay outside .field, whose padding and border wreck the track. */}
               <input
                 type="range"
@@ -380,10 +362,10 @@ export function MaterialEditor({
                 max={c.max}
                 step={c.step}
                 value={c.value}
-                style={{ flex: 1, minWidth: 0, accentColor: '#d9773a', background: 'transparent' }}
+                className="range"
                 onChange={(e) => c.set(Number(e.target.value))}
               />
-              <span className="mono muted" style={{ width: '3.5rem', fontSize: '0.72rem' }}>
+              <span className="readout wide">
                 {c.value.toFixed(2)}
                 {c.unit}
               </span>
@@ -395,7 +377,7 @@ export function MaterialEditor({
       <Collapsible
         title="Seamlessness"
         note={
-          <span style={{ color: severity ? SEVERITY_COLOR[severity] : undefined }}>
+          <span className={severity ? `sev-${severity}` : undefined}>
             {severity ? `${issues.length} issue${issues.length === 1 ? '' : 's'} · ${severity}` : 'clean'}
           </span>
         }
@@ -425,7 +407,6 @@ export function MaterialEditor({
               rows={14}
               spellCheck={false}
               className="mono"
-              style={{ fontFamily: 'Fragment Mono, monospace', fontSize: '0.8rem' }}
             />
           </div>
           {sdfError && <p className="error">{sdfError}</p>}
@@ -493,7 +474,7 @@ export function MaterialEditor({
         )}
       </Collapsible>
 
-      <div className="row no-print" style={{ justifyContent: 'flex-end' }}>
+      <div className="row end no-print">
         <button
           type="button"
           className="btn danger"

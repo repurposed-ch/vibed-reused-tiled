@@ -82,12 +82,12 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
     });
 
   return (
-    <div className="stack" style={{ gap: 0 }}>
+    <div className="stack gap-0">
       <div className="sticky-preview no-print">
         <TilePreview tile={tile} material={material} aspect={4 / 3} maxWidth="100%" />
-        <div className="stack sticky-preview-controls" style={{ gap: '0.5rem' }}>
+        <div className="stack gap-2 sticky-preview-controls">
           <div className="row">
-            <div className="field" style={{ flex: 1 }}>
+            <div className="field flex-1">
               <label>Name</label>
               <input value={tile.name} onChange={(e) => updateTile({ name: e.target.value })} />
             </div>
@@ -102,7 +102,7 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
               </select>
             </div>
           </div>
-          <span className="mono muted" style={{ fontSize: '0.68rem' }}>
+          <span className="mono muted tiny">
             {tileDimensions(tile)} · {tileUvLabel(tile)}
           </span>
         </div>
@@ -110,18 +110,11 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
 
       {fit &&
         (fit.kind === 'error' ? (
-          <p className="error" style={{ marginTop: 0 }}>
+          <p className="error mt-0">
             {fit.message}
           </p>
         ) : (
-          <p
-            className="muted"
-            style={{
-              margin: '0 0 1rem',
-              fontSize: '0.8rem',
-              ...(fit.kind === 'warning' ? { color: '#d9773a' } : {}),
-            }}
-          >
+          <p className={`${fit.kind === 'warning' ? 'warn' : 'muted'} small m-0 mb-4`}>
             {fit.message}
           </p>
         ))}
@@ -142,14 +135,9 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
             ))}
           </div>
 
-          <div className="stack" style={{ gap: '0.3rem' }}>
-            <span
-              className="muted"
-              style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}
-            >
-              Corner rounding
-            </span>
-            <div className="row" style={{ alignItems: 'center', gap: '0.5rem', flexWrap: 'nowrap' }}>
+          <div className="stack gap-1">
+            <span className="muted small">Corner rounding</span>
+            <div className="row tight">
               {/* Range inputs stay outside .field, whose padding and border wreck the track. */}
               <input
                 type="range"
@@ -157,10 +145,10 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
                 max={MAX_CORNER_ROUNDING}
                 step={0.005}
                 value={tile.cornerRounding ?? 0}
-                style={{ flex: 1, minWidth: 0, accentColor: '#d9773a', background: 'transparent' }}
+                className="range"
                 onChange={(e) => updateTile({ cornerRounding: Number(e.target.value) })}
               />
-              <span className="mono muted" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+              <span className="readout">
                 {((tile.cornerRounding ?? 0) * 100).toFixed(1)} % ·{' '}
                 {(cornerRadiusMetres(tile) * 1000).toFixed(1)} mm
               </span>
@@ -172,21 +160,13 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
       <Collapsible
         title="Colour"
         note={
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span
-              style={{
-                width: '0.7rem',
-                height: '0.7rem',
-                border: '1px solid var(--line)',
-                background: tileDisplayColor(tile.color),
-                display: 'inline-block',
-              }}
-            />
+          <span className="swatch-label">
+            <span className="swatch" style={{ background: tileDisplayColor(tile.color) }} />
             {tile.color.mode === 'brightness' ? tile.color.color : 'palette'}
           </span>
         }
       >
-        <p className="muted" style={{ margin: '0 0 0.75rem', fontSize: '0.8rem' }}>
+        <p className="muted small m-0 mb-2">
           Layout 2D uses a flat display colour; preview and 3D use the GLSL bake of{' '}
           <Link to={`/materials/${tile.materialId}`}>{material?.name ?? 'its material'}</Link>.
         </p>
@@ -195,11 +175,11 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
 
       <Collapsible title="Edge rhythm" note={RHYTHM_NOTE[status]}>
         <div className="stack">
-          <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>
+          <p className="muted small m-0">
             None → continuous UV. All four sides → edged UV (SDF mirrored/merged per edge). Partial
             is invalid.
           </p>
-          <div className="row" style={{ gap: '0.5rem' }}>
+          <div className="row gap-2">
             <button type="button" className="btn" onClick={enableAllEdges}>
               Set all four edges
             </button>
@@ -246,8 +226,8 @@ export function TileEditor({ tile, onClose }: { tile: TileDefinitionJson; onClos
         </div>
       </Collapsible>
 
-      <div className="row no-print" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="mono muted" style={{ fontSize: '0.7rem' }}>
+      <div className="row between no-print">
+        <span className="mono muted tiny">
           {tile.id.slice(0, 8)}
         </span>
         <button

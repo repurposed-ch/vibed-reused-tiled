@@ -26,7 +26,7 @@ export function JointPanel({
   return (
     <section className="panel no-print">
       <h2>Joint</h2>
-      <p className="muted" style={{ marginTop: 0, fontSize: '0.85rem' }}>
+      <p className="muted small mt-0">
         The cell is one unit tile plus one joint, so a tile spanning k cells is nominally
         k × cell − joint. Tiles a little smaller are centred and their joints widen; tiles too
         large for their footprint are left out. Raising the joint without raising the cell makes

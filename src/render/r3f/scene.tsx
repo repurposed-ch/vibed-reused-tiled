@@ -70,7 +70,7 @@ export function Scene3d({
       <group ref={rootRef} rotation={[-Math.PI / 2, 0, 0]}>
         <mesh position={[2, 1.5, -0.001]} receiveShadow userData={{ export: false }}>
           <planeGeometry args={[20, 20]} />
-          <meshStandardMaterial color="#2a241e" side={DoubleSide} />
+          <meshStandardMaterial color="#e6e2da" side={DoubleSide} />
         </mesh>
         <group ref={exportRootRef}>
           <GroutMesh

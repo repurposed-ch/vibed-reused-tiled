@@ -29,7 +29,7 @@ export function SceneCanvas({
   const ownRootRef = useRef<Group>(null);
   return (
     <Canvas shadows camera={{ position: [3, 3, 3], fov: 45 }} style={{ width: '100%', height: '100%' }}>
-      <color attach="background" args={['#1a1714']} />
+      <color attach="background" args={['#e9e6df']} />
       {/* Lower ambient than before: a normal map only reads under directional light, and
           0.65 ambient washed the baked relief back out. The dim opposing fill keeps the
           side facing away from the key light from going black. */}

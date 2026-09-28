@@ -221,7 +221,7 @@ export function TileGridCanvas({
         y={win.jCount - win.maxJ}
         width={size.width}
         height={size.height}
-        fill="#1a1714"
+        fill="#fbfaf7"
       />
 
       {windowCells(win).map(({ i, j }) => {
@@ -243,13 +243,13 @@ export function TileGridCanvas({
                 painted?.fill ??
                 (isUnclaimed
                   ? unclaimedAreFaults
-                    ? 'rgba(196,92,92,0.18)'
-                    : 'rgba(74,64,54,0.28)'
+                    ? 'rgba(163,58,42,0.12)'
+                    : 'rgba(107,102,93,0.14)'
                   : inside
-                    ? '#241f1a'
-                    : 'rgba(74,64,54,0.18)')
+                    ? '#f3f0ea'
+                    : 'rgba(107,102,93,0.05)')
               }
-              stroke={painted?.stroke ?? (inside ? '#4a4036' : 'rgba(74,64,54,0.55)')}
+              stroke={painted?.stroke ?? (inside ? '#d8d3c8' : '#c9c3b7')}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
               strokeDasharray={inside ? undefined : '3 3'}
@@ -260,7 +260,7 @@ export function TileGridCanvas({
                 y1={rect.y + 1}
                 x2={rect.x + 1}
                 y2={rect.y}
-                stroke={unclaimedAreFaults ? '#c45c5c' : 'rgba(181,168,154,0.35)'}
+                stroke={unclaimedAreFaults ? '#a33a2a' : 'rgba(107,102,93,0.35)'}
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
@@ -274,8 +274,8 @@ export function TileGridCanvas({
                 y={rect.y}
                 width={1}
                 height={1}
-                fill="rgba(196,92,92,0.5)"
-                stroke="#c45c5c"
+                fill="rgba(163,58,42,0.3)"
+                stroke="#a33a2a"
                 strokeWidth={2}
                 vectorEffect="non-scaling-stroke"
                 pointerEvents="none"
@@ -305,7 +305,7 @@ export function TileGridCanvas({
         width={extent.iCount}
         height={extent.jCount}
         fill="none"
-        stroke="#b5a89a"
+        stroke="#1c1b19"
         strokeWidth={2}
         vectorEffect="non-scaling-stroke"
         pointerEvents="none"
@@ -317,8 +317,8 @@ export function TileGridCanvas({
           y={win.jCount - paintPreview.j - paintPreview.jSpan}
           width={paintPreview.iSpan}
           height={paintPreview.jSpan}
-          fill="rgba(217,119,58,0.3)"
-          stroke="#d9773a"
+          fill="rgba(36,80,143,0.16)"
+          stroke="#24508f"
           strokeWidth={2}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
@@ -336,8 +336,8 @@ export function TileGridCanvas({
             points={`${originPoint.x},${originPoint.y} ${liveUPoint.x},${liveUPoint.y} ${
               cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).x
             },${cornerPoint(win, liveU.i + liveV.i, liveU.j + liveV.j).y} ${liveVPoint.x},${liveVPoint.y}`}
-            fill="rgba(217,119,58,0.1)"
-            stroke="rgba(181,168,154,0.6)"
+            fill="rgba(36,80,143,0.06)"
+            stroke="rgba(107,102,93,0.6)"
             strokeWidth={1}
             strokeDasharray="4 4"
             vectorEffect="non-scaling-stroke"
@@ -350,12 +350,12 @@ export function TileGridCanvas({
                 cx={point.x}
                 cy={point.y}
                 r={0.06}
-                fill="rgba(181,168,154,0.45)"
+                fill="rgba(107,102,93,0.5)"
               />
             );
           })}
-          <LatticeArrow from={originPoint} to={liveUPoint} color="#d9773a" label="u" />
-          <LatticeArrow from={originPoint} to={liveVPoint} color="#6f8f6a" label="v" />
+          <LatticeArrow from={originPoint} to={liveUPoint} color="#24508f" label="u" />
+          <LatticeArrow from={originPoint} to={liveVPoint} color="#3d6b35" label="v" />
         </g>
       )}
 

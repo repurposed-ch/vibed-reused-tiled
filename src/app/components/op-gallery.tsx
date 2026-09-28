@@ -56,61 +56,33 @@ export function OpGallery({
       </div>
 
       {groups.length === 0 && (
-        <p className="muted" style={{ margin: 0 }}>
+        <p className="muted m-0">
           Nothing matches “{query}”.
         </p>
       )}
 
       {groups.map(({ category, ops }) => (
-        <section key={category} className="stack" style={{ gap: '0.5rem' }}>
-          <h3
-            className="mono muted"
-            style={{
-              margin: '0.25rem 0 0',
-              fontSize: '0.72rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            {CATEGORY_LABEL[category]}
-          </h3>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
-              gap: '0.5rem',
-            }}
-          >
+        <section key={category} className="stack gap-2">
+          <h3 className="muted small m-0">{CATEGORY_LABEL[category]}</h3>
+          <div className="op-grid">
             {ops.map((op) => {
               const meta = OP_META[op];
               const canWrap = meta.slots.length > 0;
               return (
-                <article
-                  key={op}
-                  style={{
-                    border: '1px solid #4a4036',
-                    padding: '0.5rem',
-                    display: 'flex',
-                    gap: '0.5rem',
-                    minWidth: 0,
-                  }}
-                >
+                <article key={op} className="op-card">
                   <SdfThumb node={thumbnailNode(op)} seed={seed} period={period} size={64} />
-                  <div className="stack" style={{ gap: '0.3rem', minWidth: 0, flex: 1 }}>
-                    <div className="row" style={{ gap: '0.35rem', alignItems: 'center' }}>
-                      <span className="mono" style={{ fontSize: '0.82rem' }}>
-                        {meta.label}
-                      </span>
+                  <div className="stack gap-1 grow">
+                    <div className="row gap-2 center">
+                      <span className="mono">{meta.label}</span>
                       {meta.returns === 'distance' && <span className="pill">dist</span>}
                     </div>
-                    <p className="muted" style={{ margin: 0, fontSize: '0.7rem' }}>
+                    <p className="muted tiny m-0">
                       {meta.summary}
                     </p>
-                    <div className="row" style={{ gap: '0.35rem' }}>
+                    <div className="row gap-2">
                       <button
                         type="button"
-                        className="btn"
-                        style={{ padding: '0.3rem 0.5rem', minHeight: 0, fontSize: '0.75rem' }}
+                        className="btn xs"
                         title="Replace the selected node with this op"
                         onClick={() => onInsert(op)}
                       >
@@ -118,8 +90,7 @@ export function OpGallery({
                       </button>
                       <button
                         type="button"
-                        className="btn"
-                        style={{ padding: '0.3rem 0.5rem', minHeight: 0, fontSize: '0.75rem' }}
+                        className="btn xs"
                         disabled={!canWrap}
                         title={
                           canWrap
