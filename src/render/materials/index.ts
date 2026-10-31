@@ -1,6 +1,7 @@
 /** Re-exports for material bake / SDF → GLSL pipeline. */
 export {
   bakeMaterialTexture,
+  bakeBackend,
   disposeBakeContext,
   hashEdgeName,
   parseHexRgb,
@@ -9,10 +10,11 @@ export {
   type BakeTileInput,
 } from './bake';
 export {
-  buildBakeFragmentShader,
+  buildFieldFragmentShader,
   compileSdfExpression,
   FULLSCREEN_VERT_GLSL,
   snapScreenAngle,
+  SURFACE_FRAGMENT_GLSL,
 } from './sdf-to-glsl';
 export {
   evalSdfNode,

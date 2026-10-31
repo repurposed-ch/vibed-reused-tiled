@@ -192,8 +192,16 @@ void main() {
 }
 `;
 
-/** Full fragment shader source for baking a material SDF onto a tile. */
-export function buildBakeFragmentShader(sdf: SdfNodeJson): string {
+/**
+ * Pass 1 of a bake: evaluate the material's scalar field once per texel and store it as a
+ * 16-bit value packed into RG.
+ *
+ * This is the only per-material shader, and it holds the SDF expression exactly once
+ * (continuous) or four times (edged, one per side). The edge mode is a compile-time branch,
+ * not a uniform: Windows runs WebGL through ANGLE → Direct3D, whose shader compiler inlines
+ * every call, so a uniform branch would still pay to compile both variants.
+ */
+export function buildFieldFragmentShader(sdf: SdfNodeJson, edged: boolean): string {
   const expr = compileSdfExpression(sdf, 'p');
   return /* glsl */ `#version 300 es
 precision highp float;
@@ -201,37 +209,43 @@ uniform vec2 uResolution;
 uniform vec2 uTileSize;
 uniform float uSeed;
 uniform vec2 uPeriod;
-uniform int uColorMode; // 0 = brightness, 1 = palette
-uniform vec3 uColor;    // brightness base / unused in palette
-uniform vec3 uPalA;
-uniform vec3 uPalB;
-uniform vec3 uPalC;
-uniform vec3 uPalD;
-uniform int uEdged;     // 0 = continuous, 1 = edged
-uniform float uEdgeSeedS;
+${
+  edged
+    ? `uniform float uEdgeSeedS;
 uniform float uEdgeSeedN;
 uniform float uEdgeSeedE;
 uniform float uEdgeSeedW;
 uniform float uEdgeMirrorS;
 uniform float uEdgeMirrorN;
 uniform float uEdgeMirrorE;
-uniform float uEdgeMirrorW;
-uniform int uOutput;    // 0 = albedo, 1 = normal, 2 = roughness, 3 = lit preview
-uniform float uRelief;  // meters the 0..1 field spans
-uniform vec2 uRough;    // roughness at field 0, at field 1
+uniform float uEdgeMirrorW;`
+    : ''
+}
 out vec4 fragColor;
 ${SDF_LIB_GLSL}
 float shadeRaw(vec2 p, float seed, vec2 period) {
   return ${expr};
 }
-float normalizeShade(float v) {
-  return toShade(v);
+${edged ? EDGED_SHADE_GLSL : CONTINUOUS_SHADE_GLSL}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uResolution;
+  float s = clamp(shadeAt(uv), 0.0, 1.0);
+  float v = floor(s * 65535.0 + 0.5);
+  float hi = floor(v / 256.0);
+  fragColor = vec4(hi / 255.0, (v - hi * 256.0) / 255.0, 0.0, 1.0);
 }
-float shadeContinuous(vec2 uv01) {
+`;
+}
+
+const CONTINUOUS_SHADE_GLSL = /* glsl */ `
+float shadeAt(vec2 uv01) {
   vec2 p = wrapPeriod2(uv01 * uTileSize, uPeriod);
-  return normalizeShade(shadeRaw(p, uSeed, uPeriod));
+  return toShade(shadeRaw(p, uSeed, uPeriod));
 }
-float shadeEdged(vec2 uv) {
+`;
+
+const EDGED_SHADE_GLSL = /* glsl */ `
+float shadeAt(vec2 uv) {
   float u = uv.x;
   float v = uv.y;
   float dS = v;
@@ -246,10 +260,10 @@ float shadeEdged(vec2 uv) {
   vec2 pN = vec2(tN * uTileSize.x, dN * uTileSize.y);
   vec2 pW = vec2(dW * uTileSize.x, tW * uTileSize.y);
   vec2 pE = vec2(dE * uTileSize.x, tE * uTileSize.y);
-  float sS = normalizeShade(shadeRaw(pS, uEdgeSeedS, uPeriod));
-  float sN = normalizeShade(shadeRaw(pN, uEdgeSeedN, uPeriod));
-  float sW = normalizeShade(shadeRaw(pW, uEdgeSeedW, uPeriod));
-  float sE = normalizeShade(shadeRaw(pE, uEdgeSeedE, uPeriod));
+  float sS = toShade(shadeRaw(pS, uEdgeSeedS, uPeriod));
+  float sN = toShade(shadeRaw(pN, uEdgeSeedN, uPeriod));
+  float sW = toShade(shadeRaw(pW, uEdgeSeedW, uPeriod));
+  float sE = toShade(shadeRaw(pE, uEdgeSeedE, uPeriod));
   float wS = 1.0 / (dS + 0.05);
   float wN = 1.0 / (dN + 0.05);
   float wW = 1.0 / (dW + 0.05);
@@ -257,35 +271,67 @@ float shadeEdged(vec2 uv) {
   float wSum = wS + wN + wW + wE;
   return (sS * wS + sN * wN + sW * wW + sE * wE) / wSum;
 }
-// Every output below derives from this one scalar field — the normal is its gradient, the
-// roughness is a remap of it. Nothing is authored twice.
-float shadeAt(vec2 uv) {
-  return uEdged == 1 ? shadeEdged(uv) : shadeContinuous(uv);
+`;
+
+/**
+ * Pass 2 of a bake: turn the stored field into one output map. Material-independent, so it
+ * is compiled once per context. Every output derives from the same field — the normal is its
+ * gradient, the roughness a remap of it — so nothing is authored twice, and the expensive
+ * field is evaluated once per texel instead of once per tap.
+ */
+export const SURFACE_FRAGMENT_GLSL = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform highp sampler2D uField;
+uniform vec2 uTileSize;
+uniform int uWrap;      // 1 = continuous (taps wrap), 0 = edged (taps clamp)
+uniform int uColorMode; // 0 = brightness, 1 = palette
+uniform vec3 uColor;
+uniform vec3 uPalA;
+uniform vec3 uPalB;
+uniform vec3 uPalC;
+uniform vec3 uPalD;
+uniform int uOutput;    // 0 = albedo, 1 = normal, 2 = roughness, 3 = lit preview
+uniform float uRelief;  // meters the 0..1 field spans
+uniform vec2 uRough;    // roughness at field 0, at field 1
+out vec4 fragColor;
+
+float fieldAt(ivec2 c) {
+  ivec2 n = textureSize(uField, 0);
+  // Taps are at most one texel outside, so (c + n) % n never sees a negative operand.
+  c = uWrap == 1 ? (c + n) % n : clamp(c, ivec2(0), n - 1);
+  vec4 t = texelFetch(uField, c, 0);
+  return (floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5)) / 65535.0;
 }
+
+vec3 iqPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(6.28318530718 * (c * t + d));
+}
+
 vec3 albedoFor(float s) {
-  if (uColorMode == 1) {
-    return iqPalette(s, uPalA, uPalB, uPalC, uPalD);
-  }
+  if (uColorMode == 1) return iqPalette(s, uPalA, uPalB, uPalC, uPalD);
   return mix(uColor * 0.55, uColor * 1.18, s);
 }
-// Central differences one texel apart. shadeContinuous wraps its point, and wrapPeriod is
-// defined for negatives, so at uv = 0 the -h tap wraps to the far edge instead of clamping:
-// the normal map inherits the albedo's exact seamlessness for free.
-vec3 surfaceNormal(vec2 uv) {
-  float h = 1.0 / uResolution.x;
-  float sx = shadeAt(uv + vec2(h, 0.0)) - shadeAt(uv - vec2(h, 0.0));
-  float sy = shadeAt(uv + vec2(0.0, h)) - shadeAt(uv - vec2(0.0, h));
+
+// Central differences one texel apart. A continuous field wraps, so the normal map inherits
+// the albedo's exact seamlessness.
+vec3 surfaceNormal(ivec2 c) {
+  vec2 n = vec2(textureSize(uField, 0));
+  vec2 h = 1.0 / n;
+  float sx = fieldAt(c + ivec2(1, 0)) - fieldAt(c - ivec2(1, 0));
+  float sy = fieldAt(c + ivec2(0, 1)) - fieldAt(c - ivec2(0, 1));
   // Slope in METERS, not uv — otherwise a non-square tile skews the normal.
-  vec2 d = vec2(sx / (2.0 * h * uTileSize.x), sy / (2.0 * h * uTileSize.y)) * uRelief;
+  vec2 d = vec2(sx / (2.0 * h.x * uTileSize.x), sy / (2.0 * h.y * uTileSize.y)) * uRelief;
   return normalize(vec3(-d.x, -d.y, 1.0));
 }
+
 void main() {
-  vec2 uv = gl_FragCoord.xy / uResolution;
+  ivec2 c = ivec2(gl_FragCoord.xy);
   if (uOutput == 1) {
-    fragColor = vec4(surfaceNormal(uv) * 0.5 + 0.5, 1.0);
+    fragColor = vec4(surfaceNormal(c) * 0.5 + 0.5, 1.0);
     return;
   }
-  float s = shadeAt(uv);
+  float s = fieldAt(c);
   if (uOutput == 2) {
     float r = clamp(mix(uRough.x, uRough.y, s), 0.0, 1.0);
     fragColor = vec4(r, r, r, 1.0);
@@ -294,12 +340,10 @@ void main() {
   vec3 rgb = albedoFor(s);
   if (uOutput == 3) {
     // Fixed key light from the upper left, plus a floor so shadowed relief stays readable.
-    vec3 n = surfaceNormal(uv);
+    vec3 n = surfaceNormal(c);
     vec3 l = normalize(vec3(-0.55, 0.6, 0.58));
-    float lambert = max(dot(n, l), 0.0);
-    rgb *= 0.28 + 0.9 * lambert;
+    rgb *= 0.28 + 0.9 * max(dot(n, l), 0.0);
   }
   fragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }
 `;
-}

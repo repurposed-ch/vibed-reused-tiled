@@ -20,7 +20,8 @@ type CacheEntry = {
   normalTexture: CanvasTexture;
   /** Roughness remapped from the same field; three samples the green channel. */
   roughnessTexture: CanvasTexture;
-  dataUrl: string;
+  /** PNG of the albedo, encoded on first read. */
+  readonly dataUrl: string;
   canvas: HTMLCanvasElement;
   edged: boolean;
 };
@@ -72,7 +73,9 @@ export function getBakedTexture(input: BakeTileInput, size = TEXTURE_SIZE): Cach
     // Normal and roughness are data, not colour: an sRGB decode would bend every normal.
     normalTexture: toTexture(baked.normal!.canvas, NoColorSpace),
     roughnessTexture: toTexture(baked.roughness!.canvas, NoColorSpace),
-    dataUrl: baked.dataUrl,
+    get dataUrl() {
+      return baked.dataUrl;
+    },
     canvas: baked.canvas,
     edged: baked.edged,
   };

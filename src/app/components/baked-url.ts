@@ -16,6 +16,8 @@ function keyFor(input: BakeTileInput, size: number, primary: 'albedo' | 'lit'): 
 }
 
 function bake(input: BakeTileInput, size: number, primary: 'albedo' | 'lit', key: string): string | null {
+  const hit = cache.get(key);
+  if (hit) return hit;
   try {
     const { dataUrl } = bakeMaterialTexture(input, size, { primary });
     cache.set(key, dataUrl);
@@ -24,6 +26,39 @@ function bake(input: BakeTileInput, size: number, primary: 'albedo' | 'lit', key
   } catch {
     return null;
   }
+}
+
+/**
+ * One bake per macrotask.
+ *
+ * Bakes are synchronous, so a gallery that mounts twenty cards used to run twenty bakes back
+ * to back in one tick and freeze input until they all finished. Queued, the page stays
+ * responsive between bakes and cards fill in one by one. A timeout rather than an animation
+ * frame: the latter never fires in a background tab, which would leave a reopened gallery
+ * blank until it is looked at.
+ */
+const queue: Array<() => void> = [];
+let scheduled = false;
+
+function pump(): void {
+  scheduled = false;
+  queue.shift()?.();
+  if (queue.length > 0) schedule();
+}
+
+function schedule(): void {
+  if (scheduled) return;
+  scheduled = true;
+  window.setTimeout(pump, 0);
+}
+
+function enqueue(job: () => void): () => void {
+  queue.push(job);
+  schedule();
+  return () => {
+    const i = queue.indexOf(job);
+    if (i >= 0) queue.splice(i, 1);
+  };
 }
 
 /** The bake as a data URL, from cache when possible and off the paint path when not. */
@@ -45,10 +80,7 @@ export function useBakedUrl(
       setUrl(hit);
       return;
     }
-    // A timeout rather than an animation frame: the latter never fires in a background tab,
-    // which would leave a reopened gallery blank until it is looked at.
-    const timer = window.setTimeout(() => setUrl(bake(input, size, primary, key)), 0);
-    return () => window.clearTimeout(timer);
+    return enqueue(() => setUrl(bake(input, size, primary, key)));
   }, [key, input, size, primary]);
 
   return url;

@@ -9,7 +9,11 @@ import {
   projectToJsonString,
   TileDefinitionJsonSchema,
 } from '@/domain/project';
-import { buildBakeFragmentShader, compileSdfExpression } from '@/render/materials/sdf-to-glsl';
+import {
+  buildFieldFragmentShader,
+  compileSdfExpression,
+  SURFACE_FRAGMENT_GLSL,
+} from '@/render/materials/sdf-to-glsl';
 import { mulberry32, sampleStock } from '@/workflow/sample-stock';
 import { solveLayout } from '@/workflow/solve-layout';
 import { findRapportModule, rapportToTileSchema } from '@/workflow/rapport';
@@ -186,12 +190,17 @@ describe('sdf → glsl', () => {
     expect(expr).toContain('fbm2');
     expect(expr).toContain('voronoiEdge');
     expect(expr).toContain('seed');
-    const frag = buildBakeFragmentShader(sdf);
-    expect(frag).toContain('#version 300 es');
-    expect(frag).toContain('iqPalette');
-    expect(frag).toContain('uPalC');
-    expect(frag).toContain('shadeEdged');
-    expect(frag).toContain('uColorMode');
+    const continuous = buildFieldFragmentShader(sdf, false);
+    const edged = buildFieldFragmentShader(sdf, true);
+    expect(continuous).toContain('#version 300 es');
+    expect(continuous).not.toContain('uEdgeSeedS');
+    expect(edged).toContain('uEdgeSeedS');
+    // The material expression is inlined once per side, never per output or per tap.
+    expect(continuous.split('voronoiEdge(p').length - 1).toBe(1);
+    expect(edged.split('voronoiEdge(p').length - 1).toBe(1);
+    expect(SURFACE_FRAGMENT_GLSL).toContain('iqPalette');
+    expect(SURFACE_FRAGMENT_GLSL).toContain('uPalC');
+    expect(SURFACE_FRAGMENT_GLSL).toContain('uColorMode');
   });
 });
 
